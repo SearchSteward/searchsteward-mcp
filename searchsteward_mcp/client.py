@@ -121,6 +121,64 @@ class SearchStewardClient:
                 raise TimeoutError(f"LLM job {job_id} did not complete within {timeout}s")
             sleep(interval)
 
+    def get_resume(self) -> Any:
+        return self._request("GET", "/api/v1/resume/profile")
+
+    def get_offer(self, application_id: int) -> Any:
+        return self._request("GET", f"/api/v1/applications/{application_id}/offer-workspace")
+
+    def get_application(self, application_id: int) -> Any:
+        return self._request("GET", f"/api/v1/applications/{application_id}")
+
+    def save_match(self, job_id: int, note: Optional[str] = None) -> Any:
+        body = {"note": note} if note else {}
+        return self._request("POST", f"/api/v1/applications/{job_id}/save-watch", json=body)
+
+    def dismiss_match(self, job_id: int, reason_code: str, note: Optional[str] = None) -> Any:
+        body = {"reason_code": reason_code, "note": note}
+        return self._request("POST", f"/api/v1/jobs/{job_id}/feedback", json=body)
+
+    def restore_match(self, job_id: int) -> Any:
+        return self._request("POST", f"/api/v1/jobs/{job_id}/restore", json={})
+
+    def list_questions(self, application_id: Optional[int] = None) -> Any:
+        return self._request("GET", "/api/v1/questions", params={"application_id": application_id} if application_id else {})
+
+    def save_question(
+        self, question: str, answer: Optional[str] = None, application_id: Optional[int] = None, category: Optional[str] = None
+    ) -> Any:
+        body = {"question": question}
+        if answer is not None:
+            body["answer"] = answer
+        if application_id is not None:
+            body["application_id"] = application_id
+        if category is not None:
+            body["category"] = category
+        return self._request("POST", "/api/v1/questions", json=body)
+
+    def track_external_application(
+        self,
+        company: str,
+        title: str,
+        url: Optional[str] = None,
+        location: Optional[str] = None,
+        status: Optional[str] = None,
+        applied_date: Optional[str] = None,
+        note: Optional[str] = None,
+    ) -> Any:
+        body = {"company": company, "title": title}
+        if url is not None:
+            body["url"] = url
+        if location is not None:
+            body["location"] = location
+        if status is not None:
+            body["status"] = status
+        if applied_date is not None:
+            body["applied_date"] = applied_date
+        if note is not None:
+            body["note"] = note
+        return self._request("POST", "/api/v1/applications", json=body)
+
 
 def _extract_detail(resp: httpx.Response) -> str:
     try:

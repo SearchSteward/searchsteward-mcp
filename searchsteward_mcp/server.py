@@ -1,4 +1,4 @@
-"""SearchSteward MCP server — six tools over the SearchSteward REST API.
+"""SearchSteward MCP server — fifteen tools over the SearchSteward REST API.
 
 Run: `uvx searchsteward-mcp` (stdio). Requires SEARCHSTEWARD_API_KEY; optional
 SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
@@ -147,6 +147,133 @@ def get_negotiation_playbook(application_id: int) -> Dict[str, Any]:
             return {"error": True, "detail": "No job_id returned from negotiation start."}
         job = _c().poll_llm_job(job_id)
         return job.get("result", job)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def get_resume() -> Dict[str, Any]:
+    """Retrieve your primary resume profile. Returns your name and the full
+    resume text so Claude can analyze fit, draft cover letters, and tailor
+    details for applications. Truncates nothing — resumes are short."""
+    try:
+        data = _c().get_resume()
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    return {"name": data.get("name"), "text": data.get("text")}
+
+
+@mcp.tool()
+def get_offer(application_id: int) -> Dict[str, Any]:
+    """Retrieve the offer details (base salary, bonus, equity, deadline) for a
+    tracked application. Use this to analyze compensation packages and
+    negotiation angles. Returns the raw offer workspace."""
+    try:
+        return _c().get_offer(application_id)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def get_application(application_id: int) -> Dict[str, Any]:
+    """Fetch a tracked application's full details: status, notes, dates, and
+    (if available) offer/compensation info. This is your single source for
+    the complete application lifecycle."""
+    try:
+        app = _c().get_application(application_id)
+        # Attempt to merge offer details if present
+        try:
+            offer = _c().get_offer(application_id)
+            app["offer"] = offer
+        except ApiError as e:
+            if e.status_code not in {404, 403}:
+                raise
+            # 404/403 on offer is OK — just omit it
+        return app
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def save_match(job_id: int, note: Optional[str] = None) -> Dict[str, Any]:
+    """Save a job from your SearchSteward feed to watch later without applying yet.
+    Useful for narrowing your feed or reviewing matches before taking action.
+    Returns the application_id so you can chain to get_application()."""
+    try:
+        return _c().save_match(job_id, note=note)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def dismiss_match(job_id: int, reason_code: str, note: Optional[str] = None) -> Dict[str, Any]:
+    """Dismiss a job from your SearchSteward feed and explain why. Dismissals
+    feed the rescore loop to sharpen future matches. reason_code must be one of:
+    'wrong_seniority', 'wrong_location', 'wrong_salary', 'not_relevant',
+    'duplicate', 'posting_gone', 'other'."""
+    try:
+        return _c().dismiss_match(job_id, reason_code, note=note)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def restore_match(job_id: int) -> Dict[str, Any]:
+    """Restore a job you previously dismissed. Undoes the dismissal feedback."""
+    try:
+        return _c().restore_match(job_id)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def list_questions(application_id: Optional[int] = None) -> Dict[str, Any]:
+    """List interview/application questions from your question bank. Optionally
+    filter by a specific application. Use save_question() to add answers after
+    Claude helps you draft them."""
+    try:
+        return _c().list_questions(application_id=application_id)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def save_question(
+    question: str, answer: Optional[str] = None, application_id: Optional[int] = None, category: Optional[str] = None
+) -> Dict[str, Any]:
+    """Save an interview or application question to your question bank, optionally
+    with Claude's drafted answer. Use this after Claude helps you prepare responses."""
+    try:
+        return _c().save_question(question, answer=answer, application_id=application_id, category=category)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def track_external_application(
+    company: str,
+    title: str,
+    url: Optional[str] = None,
+    location: Optional[str] = None,
+    status: Optional[str] = None,
+    applied_date: Optional[str] = None,
+    note: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Track a job you applied to somewhere else — LinkedIn, a recruiter, a
+    company site, or anywhere outside SearchSteward. It does NOT need to be in
+    your SearchSteward feed. Returns the application_id so you can chain to
+    get_application(). This closes the loop: all your job applications can live
+    in Claude, whether from SearchSteward or elsewhere."""
+    try:
+        return _c().track_external_application(
+            company=company,
+            title=title,
+            url=url,
+            location=location,
+            status=status,
+            applied_date=applied_date,
+            note=note,
+        )
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
 

@@ -115,3 +115,182 @@ def test_poll_raises_on_failed():
     with pytest.raises(ApiError) as ei:
         c.poll_llm_job("job-2", timeout=60, interval=0, sleep=lambda _s: None)
     assert "quota exceeded" in ei.value.detail
+
+
+# --- v0.2 tools ----------------------------------------------------------
+
+
+def test_get_resume_returns_name_and_text():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"id": "r-1", "name": "Alice Smith", "text": "Senior engineer..."})
+
+    c = _client(handler)
+    out = c.get_resume()
+    assert out["name"] == "Alice Smith"
+    assert out["text"] == "Senior engineer..."
+    assert seen["path"] == "/api/v1/resume/profile"
+
+
+def test_get_offer_fetches_compensation():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"base": 150000, "bonus": 30000, "equity": 1000})
+
+    c = _client(handler)
+    out = c.get_offer(5)
+    assert out["base"] == 150000
+    assert seen["path"] == "/api/v1/applications/5/offer-workspace"
+
+
+def test_get_application_fetches_full_detail():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"id": 5, "status": "interviewing", "notes": [{"text": "awaiting feedback"}]})
+
+    c = _client(handler)
+    out = c.get_application(5)
+    assert out["id"] == 5
+    assert out["status"] == "interviewing"
+    assert seen["path"] == "/api/v1/applications/5"
+
+
+def test_save_match_posts_note():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"status": "saved", "application_id": 10})
+
+    c = _client(handler)
+    out = c.save_match(42, note="interesting company")
+    assert out["application_id"] == 10
+    assert seen["path"] == "/api/v1/applications/42/save-watch"
+    assert "interesting company" in seen["body"]
+
+
+def test_dismiss_match_posts_reason():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"dismissed": True})
+
+    c = _client(handler)
+    out = c.dismiss_match(42, "wrong_seniority", note="junior only")
+    assert out["dismissed"] is True
+    assert seen["path"] == "/api/v1/jobs/42/feedback"
+    assert "wrong_seniority" in seen["body"]
+
+
+def test_restore_match_posts_empty_body():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"restored": True})
+
+    c = _client(handler)
+    out = c.restore_match(42)
+    assert out["restored"] is True
+    assert seen["path"] == "/api/v1/jobs/42/restore"
+
+
+def test_list_questions_without_application_id():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"questions": [{"id": 1, "question": "Tell us about yourself"}]})
+
+    c = _client(handler)
+    out = c.list_questions()
+    assert len(out["questions"]) == 1
+    assert "application_id" not in seen["url"]
+
+
+def test_list_questions_with_application_id():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"questions": [{"id": 1, "question": "Tell us about yourself", "application_id": 5}]})
+
+    c = _client(handler)
+    out = c.list_questions(application_id=5)
+    assert len(out["questions"]) == 1
+    assert "application_id=5" in seen["url"]
+
+
+def test_save_question_with_all_fields():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"id": 7, "saved": True})
+
+    c = _client(handler)
+    out = c.save_question("Why us?", answer="Great team", application_id=5, category="culture")
+    assert out["id"] == 7
+    assert "Why us?" in seen["body"]
+    assert "Great team" in seen["body"]
+    assert "culture" in seen["body"]
+
+
+def test_save_question_with_minimal_fields():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"id": 7, "saved": True})
+
+    c = _client(handler)
+    out = c.save_question("Why us?")
+    assert out["id"] == 7
+    body = seen["body"]
+    assert "Why us?" in body
+    assert "answer" not in body
+
+
+def test_track_external_application_with_all_fields():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"status": "created", "application_id": 11})
+
+    c = _client(handler)
+    out = c.track_external_application(
+        "Acme Corp", "Senior Engineer", url="https://jobs.acme.com/123", location="SF", status="applied", applied_date="2026-07-20", note="via LinkedIn"
+    )
+    assert out["application_id"] == 11
+    assert seen["path"] == "/api/v1/applications"
+    assert "Acme Corp" in seen["body"]
+    assert "Senior Engineer" in seen["body"]
+    assert "applied" in seen["body"]
+
+
+def test_track_external_application_minimal():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"status": "created", "application_id": 11})
+
+    c = _client(handler)
+    out = c.track_external_application("Acme Corp", "Senior Engineer")
+    assert out["application_id"] == 11
+    body = seen["body"]
+    assert "Acme Corp" in body
+    assert "Senior Engineer" in body
+    assert "url" not in body

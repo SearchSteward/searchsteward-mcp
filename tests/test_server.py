@@ -31,6 +31,35 @@ class _FakeClient:
     def poll_llm_job(self, job_id):
         return {"status": "completed", "result": {"summary": "negotiate hard"}}
 
+    def get_resume(self):
+        return {"id": "r-1", "name": "Alice Smith", "text": "Senior Engineer..."}
+
+    def get_offer(self, application_id):
+        return {"base": 150000, "bonus": 30000, "equity": 1000}
+
+    def get_application(self, application_id):
+        return {"id": application_id, "status": "interviewing", "notes": [{"text": "awaiting feedback"}]}
+
+    def save_match(self, job_id, note=None):
+        self.calls.append(("save_match", job_id, note))
+        return {"status": "saved", "application_id": 10}
+
+    def dismiss_match(self, job_id, reason_code, note=None):
+        self.calls.append(("dismiss_match", job_id, reason_code, note))
+        return {"dismissed": True}
+
+    def restore_match(self, job_id):
+        return {"restored": True}
+
+    def list_questions(self, application_id=None):
+        return {"questions": [{"id": 1, "question": "Tell us about yourself"}]}
+
+    def save_question(self, question, answer=None, application_id=None, category=None):
+        return {"id": 7, "saved": True}
+
+    def track_external_application(self, company, title, url=None, location=None, status=None, applied_date=None, note=None):
+        return {"status": "created", "application_id": 11}
+
 
 @pytest.fixture(autouse=True)
 def _fake(monkeypatch):
@@ -84,5 +113,94 @@ def test_tool_error_is_returned_not_raised(monkeypatch, _fake):
 
     monkeypatch.setattr(_fake, "get_jobs", boom)
     out = _fn("search_matches")(query="x")
+    assert out["error"] is True
+    assert out["status"] == 402
+
+
+# --- v0.2 tool tests --------------------------------------------------------
+
+
+def test_get_resume_returns_name_and_text():
+    out = _fn("get_resume")()
+    assert out["name"] == "Alice Smith"
+    assert out["text"] == "Senior Engineer..."
+
+
+def test_get_offer_returns_compensation():
+    out = _fn("get_offer")(application_id=5)
+    assert out["base"] == 150000
+    assert out["bonus"] == 30000
+
+
+def test_get_application_merges_offer_on_success(_fake):
+    out = _fn("get_application")(application_id=5)
+    assert out["id"] == 5
+    assert out["status"] == "interviewing"
+    assert out["offer"]["base"] == 150000  # merged offer
+
+
+def test_get_application_omits_offer_on_not_found(monkeypatch, _fake):
+    def boom_offer(application_id):
+        raise ApiError(404, "Offer not found")
+
+    monkeypatch.setattr(_fake, "get_offer", boom_offer)
+    out = _fn("get_application")(application_id=5)
+    assert out["id"] == 5
+    assert "offer" not in out  # 404 on offer is silently omitted
+
+
+def test_save_match_surfaces_application_id(_fake):
+    out = _fn("save_match")(job_id=42, note="interesting")
+    assert out["application_id"] == 10
+    assert ("save_match", 42, "interesting") in _fake.calls
+
+
+def test_dismiss_match_passes_reason_code(_fake):
+    out = _fn("dismiss_match")(job_id=42, reason_code="wrong_seniority", note="junior only")
+    assert out["dismissed"] is True
+    assert ("dismiss_match", 42, "wrong_seniority", "junior only") in _fake.calls
+
+
+def test_restore_match_calls_client():
+    out = _fn("restore_match")(job_id=42)
+    assert out["restored"] is True
+
+
+def test_list_questions_without_filter():
+    out = _fn("list_questions")()
+    assert len(out["questions"]) == 1
+    assert out["questions"][0]["question"] == "Tell us about yourself"
+
+
+def test_list_questions_with_filter():
+    out = _fn("list_questions")(application_id=5)
+    assert len(out["questions"]) == 1
+
+
+def test_save_question_with_all_fields():
+    out = _fn("save_question")(question="Why us?", answer="Great team", application_id=5, category="culture")
+    assert out["saved"] is True
+    assert out["id"] == 7
+
+
+def test_track_external_application_surfaces_application_id():
+    out = _fn("track_external_application")(
+        company="Acme Corp", title="Senior Engineer", url="https://jobs.acme.com/123", location="SF", status="applied", applied_date="2026-07-20", note="via LinkedIn"
+    )
+    assert out["application_id"] == 11
+    assert out["status"] == "created"
+
+
+def test_track_external_application_minimal():
+    out = _fn("track_external_application")(company="Acme Corp", title="Senior Engineer")
+    assert out["application_id"] == 11
+
+
+def test_get_resume_error_returned_not_raised(monkeypatch, _fake):
+    def boom():
+        raise ApiError(402, "Radar required")
+
+    monkeypatch.setattr(_fake, "get_resume", boom)
+    out = _fn("get_resume")()
     assert out["error"] is True
     assert out["status"] == 402
