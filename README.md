@@ -58,14 +58,38 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 
 ## Tools
 
+**Discover & analyze**
 | Tool | What it does |
 |------|--------------|
-| `search_matches` | Search your job matches (already score-ranked; each row carries a `score`). Page size capped at 25. |
-| `get_job` | Full detail for one match — score breakdown, ghost-listing signal, description (truncated to 4k). |
+| `search_matches` | Search your job matches (score-ranked; each row carries a `score`). Page size capped at 25. |
+| `get_job` | Full detail for one match — score breakdown, ghost-listing signal, description. |
+| `get_resume` | Your résumé text, so Claude can reason about fit and tailor it natively. |
+
+**Track**
+| Tool | What it does |
+|------|--------------|
 | `list_applications` | List your tracked applications. |
-| `log_application` | Mark a match as applied (promotes it to a tracked application). |
+| `get_application` | Full detail for one application (status, notes, dates + offer if present). |
+| `log_application` | Mark a **feed** job as applied (promotes a match to a tracked application). |
+| `track_external_application` | Track a job you applied to **elsewhere** (LinkedIn, a recruiter, a company site) — it doesn't need to be in your feed. |
 | `update_application` | Change an application's status and/or add a note. |
-| `get_negotiation_playbook` | Generate an offer-negotiation playbook (runs an LLM job; Radar quota applies). |
+
+**Triage**
+| Tool | What it does |
+|------|--------------|
+| `save_match` | Save a feed job to watch later (no application yet). |
+| `dismiss_match` | Hide a match (with a reason) — sharpens future scoring. |
+| `restore_match` | Undo a dismiss. |
+
+**Prep & negotiate**
+| Tool | What it does |
+|------|--------------|
+| `list_questions` | Your interview/application question bank. |
+| `save_question` | Save a drafted answer back to the bank. |
+| `get_offer` | Offer/compensation details for an application. |
+| `get_negotiation_playbook` | SearchSteward's offer-negotiation playbook (Radar; runs an LLM job). |
+
+**Free vs paid:** a key uses **your plan's limits — the same as the web app**. Free keys reach the read + track + triage tools; the full match-feed depth and `get_negotiation_playbook` are Radar-only, and your key hits the paywall exactly where the app does.
 
 ## Configuration
 
@@ -84,11 +108,11 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 
 **`Invalid input` from `claude mcp add-json`** — your Claude Code version wants a `type` field. Prefer the plain `claude mcp add` command-first form above instead.
 
-**Tool returns a 401 / "Invalid or revoked API key"** — the key was revoked, mistyped, or the subscription lapsed. Mint a fresh key in Settings.
+**Tool returns a 401 / "Invalid or revoked API key"** — the key was revoked or mistyped. Mint a fresh key in Settings.
 
-**Tool returns a 402 / "Radar subscription required" or "…suspended while your subscription is paused"** — MCP access requires an active Radar subscription and is suspended while paused; it resumes automatically on unpause.
+**Tool returns a 402 / "entitlement_denied"** — that capability is Radar-only (e.g. the negotiation playbook, or feed depth beyond the free cap). Your key uses your plan's limits, the same as the web app.
 
-**Tool returns a 403 / "This endpoint is not available to API keys"** — expected: API keys can only reach the six tools above, nothing else.
+**Tool returns a 403 / "This endpoint is not available to API keys"** — expected: API keys can only reach the tools above, nothing else.
 
 **Don't paste keys into a shell command line** — `-e` values land in your shell history. If you must, revoke and re-mint afterward.
 
