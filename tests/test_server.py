@@ -209,7 +209,7 @@ def test_get_resume_error_returned_not_raised(monkeypatch, _fake):
 # --- v0.2.1 conversion CTA tests --------------------------------------------
 
 
-def _capped_feed(monkeypatch, _fake, *, is_free, total_strong, shown, page_echo=None):
+def _capped_feed(monkeypatch, _fake, *, is_free, total_strong, shown, strong_90=0):
     """Make get_jobs return a crafted /jobs response carrying the nudge fields."""
     def fake_get_jobs(params):
         return {
@@ -217,6 +217,7 @@ def _capped_feed(monkeypatch, _fake, *, is_free, total_strong, shown, page_echo=
             "is_free": is_free,
             "total_strong_matches": total_strong,
             "matches_shown": shown,
+            "strong_90_count": strong_90,
         }
     monkeypatch.setattr(_fake, "get_jobs", fake_get_jobs)
 
@@ -230,6 +231,30 @@ def test_upgrade_cta_fires_for_capped_free_user(monkeypatch, _fake):
     assert up["more_behind_paywall"] == 100
     assert "100 more" in up["message"]
     assert "50" in up["message"]  # feed-cap framing, honest about the feed size
+
+
+def test_upgrade_cta_includes_high_fit_tier(monkeypatch, _fake):
+    _capped_feed(monkeypatch, _fake, is_free=True, total_strong=150, shown=50, strong_90=12)
+    out = _fn("search_matches")(query="x")
+    msg = out["upgrade"]["message"]
+    assert "12" in msg and "90%+" in msg
+    assert "locked" in msg  # loss framing
+    assert out["upgrade"]["strong_90_count"] == 12
+
+
+def test_upgrade_cta_omits_tier_when_zero(monkeypatch, _fake):
+    _capped_feed(monkeypatch, _fake, is_free=True, total_strong=150, shown=50, strong_90=0)
+    out = _fn("search_matches")(query="x")
+    assert "90%+" not in out["upgrade"]["message"]
+
+
+def test_upgrade_cta_survives_non_numeric_tier(monkeypatch, _fake):
+    def fake_get_jobs(params):
+        return {"jobs": [], "is_free": True, "total_strong_matches": 150,
+                "matches_shown": 50, "strong_90_count": "bad"}
+    monkeypatch.setattr(_fake, "get_jobs", fake_get_jobs)
+    out = _fn("search_matches")(query="x")  # must not raise
+    assert "90%+" not in out["upgrade"]["message"]
 
 
 def test_upgrade_cta_shows_plus_at_ceiling(monkeypatch, _fake):

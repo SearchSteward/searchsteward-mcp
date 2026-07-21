@@ -62,13 +62,19 @@ def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, A
     if more <= 0:
         return None
     more_str = f"{more}+" if total_strong >= _UNLOCK_NUDGE_CEILING else str(more)
+    try:
+        high_fit = int(data.get("strong_90_count") or 0)
+    except (TypeError, ValueError):
+        high_fit = 0
+    tier = f", {high_fit} of them scored 90%+" if high_fit > 0 else ""
     return {
         "reason": "feed_depth",
         "feed_cap": shown,
         "more_behind_paywall": more,
+        "strong_90_count": high_fit,
         "message": (
-            f"Your free feed is capped at {shown} matches. Radar unlocks the full "
-            f"ranked feed — {more_str} more strong matches you're scored against."
+            f"Free shows your top {shown} matches — {more_str} more are locked{tier}. "
+            f"Radar unlocks the full ranked feed you're scored against."
         ),
     }
 
