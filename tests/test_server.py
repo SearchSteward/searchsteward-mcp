@@ -1,4 +1,6 @@
 """Server/tool tests. Skipped when the `mcp` SDK isn't installed."""
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 pytest.importorskip("mcp", reason="mcp SDK not installed")
@@ -324,3 +326,46 @@ def test_negotiation_402_relays_upgrade_reason(monkeypatch, _fake):
     assert out["error"] is True
     assert out["status"] == 402
     assert "Upgrade to Radar" in out["detail"]
+
+
+# --- check_new_matches (high-fit pull tool) ---------------------------------
+
+
+def _hf_job(score, hours_ago, jid=1):
+    disc = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+    return {"id": jid, "title": "Eng", "company": "Acme", "score_v2": score, "date_discovered": disc}
+
+
+def test_check_new_matches_returns_recent_high_fit(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(94, 2, 1), _hf_job(97, 5, 2)]})
+    out = _fn("check_new_matches")()
+    assert out["count"] == 2
+    assert out["new_high_fit"][0]["score"] == 97          # sorted desc
+    assert "Radar" in out["upgrade"]["message"]           # conversion pointer
+
+
+def test_check_new_matches_excludes_old(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(95, 100)]})  # 100h > 48h
+    out = _fn("check_new_matches")()
+    assert out["count"] == 0 and "No new" in out["message"]
+    assert "upgrade" not in out
+
+
+def test_check_new_matches_excludes_low_score(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(80, 2)]})
+    out = _fn("check_new_matches")()
+    assert out["count"] == 0
+
+
+def test_check_new_matches_custom_window(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(92, 100)]})
+    out = _fn("check_new_matches")(hours=200)              # widen window to include the 100h-old one
+    assert out["count"] == 1
+
+
+def test_check_new_matches_error_surfaced(monkeypatch, _fake):
+    def boom(p):
+        raise ApiError(500, "boom")
+    monkeypatch.setattr(_fake, "get_jobs", boom)
+    out = _fn("check_new_matches")()
+    assert out["error"] is True

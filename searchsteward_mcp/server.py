@@ -1,4 +1,4 @@
-"""SearchSteward MCP server — fifteen tools over the SearchSteward REST API.
+"""SearchSteward MCP server — sixteen tools over the SearchSteward REST API.
 
 Run: `uvx searchsteward-mcp` (stdio). Requires SEARCHSTEWARD_API_KEY; optional
 SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
@@ -6,6 +6,7 @@ SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -122,6 +123,62 @@ def search_matches(
         upgrade = _feed_depth_upgrade(data, page)
         if upgrade:
             result["upgrade"] = upgrade
+    return result
+
+
+_HIGH_FIT_SCORE = 90
+
+
+def _discovered_within(iso_str: Any, cutoff: datetime) -> bool:
+    """True if an ISO-8601 timestamp is at/after `cutoff`. Malformed/missing → False
+    (a row we can't date is not treated as new)."""
+    if not isinstance(iso_str, str) or not iso_str:
+        return False
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt >= cutoff
+
+
+@mcp.tool()
+def check_new_matches(hours: int = 48) -> Dict[str, Any]:
+    """Surface your NEW high-fit matches — roles scored 90%+ that were discovered
+    in the last `hours` (default 48). Call this at the start of a session to catch
+    the strongest recent opportunities without scrolling the whole feed. Returns
+    compact rows (highest score first). If nothing new, says so plainly."""
+    try:
+        data = _c().get_jobs({"page": 1, "page_size": _MAX_PAGE_SIZE})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    jobs = data.get("jobs", data) if isinstance(data, dict) else data
+    if not isinstance(jobs, list):
+        jobs = []
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, int(hours)))
+    fresh = []
+    for j in jobs:
+        try:
+            score = float(j.get("score_v2", j.get("score")) or 0)
+        except (TypeError, ValueError):
+            continue
+        discovered = j.get("date_discovered") or j.get("date_added")
+        if score >= _HIGH_FIT_SCORE and _discovered_within(discovered, cutoff):
+            fresh.append(_row(j))
+    fresh.sort(key=lambda r: r.get("score") or 0, reverse=True)
+    result: Dict[str, Any] = {"new_high_fit": fresh, "count": len(fresh), "window_hours": hours}
+    if not fresh:
+        result["message"] = f"No new 90%+ matches in the last {hours}h."
+    else:
+        # Conversion pointer: the pull tool is the manual version of the paid push.
+        result["upgrade"] = {
+            "reason": "high_fit_alert",
+            "message": (
+                "Radar emails you the moment a new 90%+ match appears — "
+                "so you don't have to check manually."
+            ),
+        }
     return result
 
 
