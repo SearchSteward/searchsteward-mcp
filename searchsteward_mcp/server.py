@@ -19,6 +19,9 @@ _client: Optional[SearchStewardClient] = None
 
 _MAX_PAGE_SIZE = 25
 _DESC_LIMIT = 4000
+# Mirrors the backend's _UNLOCK_NUDGE_COUNT_CEILING (job_service.py): the
+# "N strong matches" count is capped there, so at the ceiling we show "N+".
+_UNLOCK_NUDGE_CEILING = 200
 
 
 def _c() -> SearchStewardClient:
@@ -35,6 +38,39 @@ def _err(exc: Exception) -> Dict[str, Any]:
     if isinstance(exc, ConfigError):
         return {"error": True, "detail": str(exc)}
     return {"error": True, "detail": f"{type(exc).__name__}: {exc}"}
+
+
+def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, Any]]:
+    """Free-tier "unlock the rest" CTA for search_matches.
+
+    Fires only when the /jobs response says this is a free, page-1 user scored
+    against more strong matches than their capped feed surfaces (the backend
+    already restricts a non-zero total_strong_matches to free / open-market /
+    page-1 / first-feed-complete). Every value comes from the response; a
+    missing or non-numeric field degrades to no CTA — never a crash. Framed
+    around the FEED CAP, not this page, so it stays honest when the page holds
+    fewer rows than the feed's total.
+    """
+    if page != 1 or not data.get("is_free"):
+        return None
+    try:
+        total_strong = int(data.get("total_strong_matches") or 0)
+        shown = int(data.get("matches_shown") or 0)
+    except (TypeError, ValueError):
+        return None
+    more = total_strong - shown
+    if more <= 0:
+        return None
+    more_str = f"{more}+" if total_strong >= _UNLOCK_NUDGE_CEILING else str(more)
+    return {
+        "reason": "feed_depth",
+        "feed_cap": shown,
+        "more_behind_paywall": more,
+        "message": (
+            f"Your free feed is capped at {shown} matches. Radar unlocks the full "
+            f"ranked feed — {more_str} more strong matches you're scored against."
+        ),
+    }
 
 
 def _row(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -75,7 +111,12 @@ def search_matches(
         return _err(exc)
     jobs = data.get("jobs", data) if isinstance(data, dict) else data
     rows = [_row(j) for j in jobs] if isinstance(jobs, list) else []
-    return {"matches": rows, "page": page, "count": len(rows)}
+    result: Dict[str, Any] = {"matches": rows, "page": page, "count": len(rows)}
+    if isinstance(data, dict):
+        upgrade = _feed_depth_upgrade(data, page)
+        if upgrade:
+            result["upgrade"] = upgrade
+    return result
 
 
 @mcp.tool()
@@ -169,9 +210,18 @@ def get_offer(application_id: int) -> Dict[str, Any]:
     tracked application. Use this to analyze compensation packages and
     negotiation angles. Returns the raw offer workspace."""
     try:
-        return _c().get_offer(application_id)
+        result = _c().get_offer(application_id)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+    # Offer stage is peak negotiation intent — point Claude at the playbook tool.
+    # Neutral wording: free users hit the existing 402 (which carries the upgrade
+    # message) on execution; paid users just use it.
+    if isinstance(result, dict):
+        result["radar_tip"] = (
+            "SearchSteward can generate a structured negotiation playbook for this "
+            "offer — call get_negotiation_playbook(application_id)."
+        )
+    return result
 
 
 @mcp.tool()
