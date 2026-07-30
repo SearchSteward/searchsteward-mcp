@@ -7,7 +7,7 @@ SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -420,15 +420,6 @@ def track_external_application(
         return _err(exc)
 
 
-def main() -> None:
-    """Console entry point (stdio transport)."""
-    mcp.run()
-
-
-if __name__ == "__main__":
-    main()
-
-
 @mcp.tool()
 def review_candidates(
     query: Optional[str] = None,
@@ -460,7 +451,14 @@ def review_candidates(
 
 @mcp.tool()
 def submit_match_verdict(
-    job_id: int, verdict: str, note: Optional[str] = None
+    job_id: int,
+    # Literal, not str: this renders as an ENUM in the tool schema, so the model is
+    # constrained when it PICKS the argument rather than corrected by a 400 after the
+    # call. For an LLM-facing tool the schema is the guardrail — a bare `str` costs the
+    # user a wasted turn every time the model guesses "relevant" or "yes".
+    # Must stay in lockstep with MATCH_REVIEW_VERDICTS in the API's match_review_service.
+    verdict: Literal["should_surface", "should_not_surface", "unsure"],
+    note: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Record whether the SCORER was right or wrong about one job, as ground truth.
 
@@ -492,3 +490,12 @@ def review_summary() -> Dict[str, Any]:
         return _c().get_review_summary()
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+
+
+def main() -> None:
+    """Console entry point (stdio transport)."""
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()
