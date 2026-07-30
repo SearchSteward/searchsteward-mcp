@@ -1,6 +1,6 @@
 [project]
 name = "searchsteward-mcp"
-version = "0.2.2"
+version = "0.2.3"
 description = "MCP server for SearchSteward — search job matches, read score breakdowns, log applications, and pull negotiation prep from any MCP client."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -8,7 +8,18 @@ license = { text = "MIT" }
 authors = [{ name = "SearchSteward" }]
 keywords = ["mcp", "job-search", "claude", "searchsteward"]
 dependencies = [
-    "mcp>=1.2",
+    # UPPER BOUND IS LOAD-BEARING. server.py imports `mcp.server.fastmcp`, which
+    # mcp 2.0.0 REMOVED (verified against a clean venv: mcp 2.0.0 ships mcp.server but
+    # neither mcp.server.fastmcp nor a standalone fastmcp). With a bare `mcp>=1.2` a
+    # fresh resolve picks 2.x and the server dies at import with ModuleNotFoundError.
+    #
+    # This failed SILENTLY and on a delay: an existing install keeps working off its
+    # cached 1.x wheel, so nothing breaks at release time — it breaks whenever a given
+    # user's uvx/pip cache happens to refresh. Reported 2026-07-30 by a user whose
+    # server ran for a week and then stopped with no change on their side.
+    #
+    # Lifting the bound requires PORTING to the mcp 2.x API, not just widening this.
+    "mcp>=1.2,<2",
     "httpx>=0.27",
 ]
 
