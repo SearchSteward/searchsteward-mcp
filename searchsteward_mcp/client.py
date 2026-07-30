@@ -82,6 +82,27 @@ class SearchStewardClient:
     def get_jobs(self, params: Dict[str, Any]) -> Any:
         return self._request("GET", "/api/v1/jobs", params={k: v for k, v in params.items() if v is not None})
 
+    def get_review_candidates(self, params: Dict[str, Any]) -> Any:
+        """Corpus-scoped review candidates — includes jobs never scored for this user.
+
+        Deliberately NOT /api/v1/jobs: that endpoint is scoped to the materialised feed,
+        so it can only return roles the ranker already surfaced. Reviewing through it
+        grades the ranker on its own answers and can never find the misses.
+        """
+        return self._request(
+            "GET", "/api/v1/match-review/candidates",
+            params={k: v for k, v in params.items() if v is not None},
+        )
+
+    def submit_match_verdict(self, job_id: int, verdict: str, note: Optional[str] = None) -> Any:
+        body: Dict[str, Any] = {"verdict": verdict}
+        if note:
+            body["note"] = note
+        return self._request("POST", f"/api/v1/match-review/{job_id}/verdict", json=body)
+
+    def get_review_summary(self) -> Any:
+        return self._request("GET", "/api/v1/match-review/summary")
+
     def get_job_context(self, job_id: int) -> Any:
         return self._request("GET", f"/api/v1/jobs/{job_id}/context")
 
