@@ -10,6 +10,24 @@ An [MCP](https://modelcontextprotocol.io) server that connects [SearchSteward](h
 
 In SearchSteward: **Settings → Connect to Claude → Create API key**. The key (`ss_pat_…`) is shown **once** — copy it immediately. You can revoke it any time from the same screen; revocation takes effect immediately.
 
+### Key scopes
+
+A key can be **scoped** to limit what it can reach — useful for a key you'll paste into a shared config, commit near, or hand to a script:
+
+| Scope | Reaches | Good for |
+|-------|---------|----------|
+| `full` (default) | Every tool below | Your own everyday use |
+| `read_no_pii` | Read/search/analyze tools, **except** `get_resume` and `get_offer`; **no writes** | A key you paste somewhere shared — a leak can't read your résumé or offer, or change your account |
+
+Scope is **set once when the key is minted and can never be widened** — mint a new key to change it. Enforcement is server-side: a `read_no_pii` key gets a **403** on `get_resume`, `get_offer`, and any write tool (`log_application`, `dismiss_match`, `save_match`, `save_question`, `update_application`, `submit_match_verdict`, `track_external_application`, `get_negotiation_playbook`). Mint a scoped key via the API:
+
+```bash
+curl -X POST https://searchsteward.com/api/v1/api-keys \
+  -H "Authorization: Bearer <your session/JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "claude-readonly", "scope": "read_no_pii"}'
+```
+
 ## 2. Add it to your MCP client
 
 ### Claude Code
@@ -137,6 +155,8 @@ Your key hits the paywall in exactly the place your account does. Radar's *push*
 **Tool returns a 402 / "entitlement_denied"** — that capability is Radar-only (e.g. the negotiation playbook, or feed depth beyond the free cap). Your key uses your plan's limits, the same as the web app.
 
 **Tool returns a 403 / "This endpoint is not available to API keys"** — expected: API keys can only reach the tools above, nothing else.
+
+**Tool returns a 403 / "This API key's scope does not permit…"** — your key is a `read_no_pii` key and the tool needs résumé/offer access or writes. Mint a `full` key (see [Key scopes](#key-scopes)) if you need it.
 
 **Don't paste keys into a shell command line** — `-e` values land in your shell history. If you must, revoke and re-mint afterward.
 
