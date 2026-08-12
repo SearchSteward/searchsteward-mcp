@@ -2,7 +2,7 @@
 
 An [MCP](https://modelcontextprotocol.io) server that connects [SearchSteward](https://searchsteward.com) to Claude Desktop, Claude Code, and any other MCP client. Search your job matches, read score breakdowns, log applications, and pull negotiation prep — from inside Claude.
 
-Requires an active **Radar** subscription and a SearchSteward API key.
+**Any SearchSteward account can use it — free or paid.** You mint an API key from any plan and it applies *your plan's own limits*, exactly as the web app does: free keys reach the search, tracking, and triage tools; **Radar** unlocks the negotiation playbook and the full-depth match feed. Your key hits the paywall in precisely the same place your account does. (See [Free vs paid](#free-vs-paid) below.)
 
 ---
 
@@ -58,10 +58,13 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 
 ## Tools
 
+19 tools in five groups.
+
 **Discover & analyze**
 | Tool | What it does |
 |------|--------------|
 | `search_matches` | Search your job matches (score-ranked; each row carries a `score`). Page size capped at 25. |
+| `check_new_matches` | Pull the new 90%+ matches discovered in the last N hours (default 48). Scans the top page only — see the tool's own note. |
 | `get_job` | Full detail for one match — score breakdown, ghost-listing signal, description. |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it natively. |
 
@@ -87,9 +90,30 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 | `list_questions` | Your interview/application question bank. |
 | `save_question` | Save a drafted answer back to the bank. |
 | `get_offer` | Offer/compensation details for an application. |
-| `get_negotiation_playbook` | SearchSteward's offer-negotiation playbook (Radar; runs an LLM job). |
+| `get_negotiation_playbook` | SearchSteward's offer-negotiation playbook (**Radar**; runs an LLM job). |
 
-**Free vs paid:** a key uses **your plan's limits — the same as the web app**. Free keys reach the read + track + triage tools; the full match-feed depth and `get_negotiation_playbook` are Radar-only, and your key hits the paywall exactly where the app does.
+**Audit match quality**
+| Tool | What it does |
+|------|--------------|
+| `review_candidates` | Review whether the scorer ranked right — reaches the whole corpus, including roles it never surfaced for you. |
+| `submit_match_verdict` | Record ground truth on one job (`should_surface` / `should_not_surface` / `unsure`). Distinct from `dismiss_match`. |
+| `review_summary` | Count of the verdicts you've submitted, by verdict. |
+
+<a name="free-vs-paid"></a>
+### Free vs paid
+
+A key uses **your plan's limits — identical to the web app**; a free account mints a working key. What each tier reaches:
+
+| | Free | Radar (paid) |
+|---|---|---|
+| Search, read, résumé (`search_matches`, `get_job`, `get_resume`) | ✅ | ✅ |
+| Track & triage (`log_application`, `save_match`, `dismiss_match`, …) | ✅ | ✅ |
+| Question bank & match-quality review | ✅ | ✅ |
+| `check_new_matches` (manual pull) | ✅ | ✅ |
+| Full match-feed depth (beyond the free cap) | capped + upgrade hint | ✅ full |
+| `get_negotiation_playbook` | ❌ 402 | ✅ |
+
+Your key hits the paywall in exactly the place your account does. Radar's *push* alerts (an email the moment a new 90%+ match appears) remain a subscription feature — `check_new_matches` is the manual, on-demand equivalent.
 
 ## Configuration
 
@@ -126,7 +150,6 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 ## Development
 
 ```bash
-cd mcp-server
 pip install -e ".[test]"
 pytest
 ```

@@ -13,7 +13,21 @@ on:
     tags: ["v*"]
 
 jobs:
+  # Gate the release on the same test suite CI runs. Without this, a tag could
+  # publish a broken build to PyPI even while the tests are red — which is how
+  # v0.3.0 shipped three tools that never registered at runtime.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[test]"
+      - run: pytest -q
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
