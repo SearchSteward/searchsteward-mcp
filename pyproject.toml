@@ -35,7 +35,12 @@ searchsteward-mcp = "searchsteward_mcp.server:main"
 test = ["pytest>=8"]
 
 [build-system]
-requires = ["hatchling"]
+# Pin hatchling: 1.28+ stamps wheels with Metadata-Version 2.5, which no released
+# twine yet accepts — the PyPI publish step fails with
+# "InvalidDistribution: '2.5' is not a valid metadata version". 1.27.0 emits 2.4
+# (twine-accepted). Lift this once twine ships 2.5 support and the publish action
+# bundles it. (v0.3.2 release, 2026-08-12.)
+requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
