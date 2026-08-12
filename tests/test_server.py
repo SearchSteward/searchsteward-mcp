@@ -119,6 +119,43 @@ def test_tool_error_is_returned_not_raised(monkeypatch, _fake):
     assert out["status"] == 402
 
 
+def test_update_application_requires_status_or_note():
+    out = _fn("update_application")(application_id=3)
+    assert out["error"] is True
+
+
+def test_update_application_both_succeed(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "patch_application", lambda aid, body: {"ok": True}, raising=False)
+    monkeypatch.setattr(_fake, "add_note", lambda aid, note: {"note_id": 1}, raising=False)
+    out = _fn("update_application")(application_id=3, status="offer", note="hi")
+    assert out["updated"] == {"ok": True}
+    assert out["note"] == {"note_id": 1}
+    assert "partial" not in out
+
+
+def test_update_application_reports_partial_when_note_fails(monkeypatch, _fake):
+    # Status write commits, note write fails: the caller must SEE that the status
+    # landed (partial=True) rather than a clean top-level error it would retry on.
+    monkeypatch.setattr(_fake, "patch_application", lambda aid, body: {"ok": True}, raising=False)
+
+    def boom(aid, note):
+        raise ApiError(500, "note store down")
+
+    monkeypatch.setattr(_fake, "add_note", boom, raising=False)
+    out = _fn("update_application")(application_id=3, status="offer", note="hi")
+    assert out["updated"] == {"ok": True}
+    assert out["note_error"]["status"] == 500
+    assert out["partial"] is True
+
+
+def test_list_questions_wraps_bare_list(monkeypatch, _fake):
+    # The real /questions endpoint returns a JSON array; the tool must hand back a
+    # dict or FastMCP's return validation rejects it (the live-smoke failure).
+    monkeypatch.setattr(_fake, "list_questions", lambda application_id=None: [{"id": 1}])
+    out = _fn("list_questions")()
+    assert out == {"questions": [{"id": 1}]}
+
+
 # --- v0.2 tool tests --------------------------------------------------------
 
 

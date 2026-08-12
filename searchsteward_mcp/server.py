@@ -1,4 +1,4 @@
-"""SearchSteward MCP server — sixteen tools over the SearchSteward REST API.
+"""SearchSteward MCP server — nineteen tools over the SearchSteward REST API.
 
 Run: `uvx searchsteward-mcp` (stdio). Requires SEARCHSTEWARD_API_KEY; optional
 SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
@@ -6,6 +6,7 @@ SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
 
 from __future__ import annotations
 
+import atexit
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
@@ -29,7 +30,18 @@ def _c() -> SearchStewardClient:
     global _client
     if _client is None:
         _client = SearchStewardClient()
+        # Drain the httpx connection pool on interpreter shutdown. The stdio server
+        # is a long-lived daemon, so without this the pool's sockets stay open for
+        # the life of the process; atexit closes it on a clean exit.
+        atexit.register(_close_client)
     return _client
+
+
+def _close_client() -> None:
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None
 
 
 def _err(exc: Exception) -> Dict[str, Any]:
@@ -154,7 +166,10 @@ def check_new_matches(hours: int = 48) -> Dict[str, Any]:
     at the start of a session to catch recent strong opportunities without browsing the full feed.
     Do NOT use this to filter by salary/location — use search_matches with filters instead. Hours default
     48 (2 days); values below 1 are clamped to 1. If no high-fit roles are found in the window,
-    returns an empty list with a message."""
+    returns an empty list with a message.
+    NOTE: scans only the first page (top 25 score-ranked matches). Since results are ranked
+    highest-score-first, new 90%+ roles are near the top, but a role scored 90%+ that sits below
+    rank 25 will not be seen. For an exhaustive walk, page through search_matches."""
     try:
         data = _c().get_jobs({"page": 1, "page_size": _MAX_PAGE_SIZE})
     except Exception as exc:  # noqa: BLE001
@@ -245,17 +260,29 @@ def update_application(
     Status values: "applied", "interviewing", "offer", "rejected", "accepted" (exact spelling required).
     Provide either a status OR a note (or both). Returns error if neither is provided. Use get_application
     to retrieve the current state before updating."""
-    try:
-        result: Dict[str, Any] = {}
-        if status is not None:
+    if status is None and not note:
+        return {"error": True, "detail": "Provide a status and/or a note to update."}
+    # The status and note are two independent backend writes. Do them in sequence
+    # but report each outcome separately: if the status write commits and the note
+    # write then fails, the status change IS already persisted — collapsing that
+    # into a single top-level error made the caller think nothing happened and
+    # retry, double-applying the status. Each leg reports success or its own error.
+    result: Dict[str, Any] = {}
+    if status is not None:
+        try:
             result["updated"] = _c().patch_application(application_id, {"status": status})
-        if note:
+        except Exception as exc:  # noqa: BLE001
+            result["status_error"] = _err(exc)
+    if note:
+        try:
             result["note"] = _c().add_note(application_id, note)
-        if not result:
-            return {"error": True, "detail": "Provide a status and/or a note to update."}
-        return result
-    except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+        except Exception as exc:  # noqa: BLE001
+            result["note_error"] = _err(exc)
+    # partial=True whenever one leg persisted and another failed, so the model can
+    # see the write that DID land instead of assuming a clean rollback.
+    if ("status_error" in result) != ("note_error" in result) and len(result) > 1:
+        result["partial"] = True
+    return result
 
 
 @mcp.tool()
@@ -372,7 +399,7 @@ def list_questions(application_id: Optional[int] = None) -> Dict[str, Any]:
     or to avoid re-drafting the same question. Pair with save_question to add new questions after Claude
     helps you draft answers."""
     try:
-        return _c().list_questions(application_id=application_id)
+        return _as_dict(_c().list_questions(application_id=application_id), "questions")
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
 
@@ -389,6 +416,14 @@ def save_question(
         return _c().save_question(question, answer=answer, application_id=application_id, category=category)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+
+
+def _as_dict(data: Any, key: str) -> Dict[str, Any]:
+    """Normalize a bare-list API response into the dict shape FastMCP validates
+    the tool's return against. The /questions endpoint returns a JSON array; the
+    tool signature is Dict, so returning the list verbatim raised a Pydantic
+    dict_type error at the transport layer and the tool failed on real data."""
+    return {key: data} if isinstance(data, list) else data
 
 
 @mcp.tool()
