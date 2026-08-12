@@ -62,6 +62,17 @@ class _FakeClient:
     def track_external_application(self, company, title, url=None, location=None, status=None, applied_date=None, note=None):
         return {"status": "created", "application_id": 11}
 
+    def get_review_candidates(self, params):
+        self.calls.append(("get_review_candidates", params))
+        return {"candidates": [{"id": 5, "title": "Eng", "evaluated": False}], "count": 1}
+
+    def submit_match_verdict(self, job_id, verdict, note=None):
+        self.calls.append(("submit_match_verdict", job_id, verdict, note))
+        return {"stored": True, "job_id": job_id, "verdict": verdict}
+
+    def get_review_summary(self):
+        return {"counts": {"should_surface": 2}, "total": 2}
+
 
 @pytest.fixture(autouse=True)
 def _fake(monkeypatch):
@@ -154,6 +165,50 @@ def test_list_questions_wraps_bare_list(monkeypatch, _fake):
     monkeypatch.setattr(_fake, "list_questions", lambda application_id=None: [{"id": 1}])
     out = _fn("list_questions")()
     assert out == {"questions": [{"id": 1}]}
+
+
+def test_list_applications_passes_filters(_fake):
+    out = _fn("list_applications")(status="applied", page=2)
+    assert out["applications"][0]["id"] == 3
+
+
+def test_review_candidates_passes_params(_fake):
+    out = _fn("review_candidates")(query="staff", limit=10, include_labelled=True)
+    assert out["count"] == 1
+    _, params = _fake.calls[0]
+    assert params == {"query": "staff", "limit": 10, "include_labelled": True}
+
+
+def test_submit_match_verdict_passes_through(_fake):
+    out = _fn("submit_match_verdict")(job_id=5, verdict="should_surface", note="great role")
+    assert out["stored"] is True
+    assert ("submit_match_verdict", 5, "should_surface", "great role") in _fake.calls
+
+
+def test_review_summary_returns_counts(_fake):
+    out = _fn("review_summary")()
+    assert out["total"] == 2
+    assert out["counts"]["should_surface"] == 2
+
+
+def test_review_tool_error_is_returned_not_raised(monkeypatch, _fake):
+    def boom():
+        raise ApiError(403, "not available to API keys")
+
+    monkeypatch.setattr(_fake, "get_review_summary", boom)
+    out = _fn("review_summary")()
+    assert out["error"] is True and out["status"] == 403
+
+
+def test_feed_depth_cta_leads_with_monitoring(_fake):
+    # The upgrade nudge must sell ongoing monitoring/alerts, not just raw feed depth
+    # (a good ranker makes "more rows" a weak, trivially-bypassed pitch).
+    data = {"is_free": True, "total_strong_matches": 40, "matches_shown": 25, "strong_90_count": 3}
+    from searchsteward_mcp import server as _srv
+    cta = _srv._feed_depth_upgrade(data, page=1)
+    assert cta is not None
+    assert "match appears" in cta["message"]  # the monitoring hook
+    assert cta["more_behind_paywall"] == 15
 
 
 # --- v0.2 tool tests --------------------------------------------------------

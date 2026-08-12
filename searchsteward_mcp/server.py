@@ -85,9 +85,14 @@ def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, A
         "feed_cap": shown,
         "more_behind_paywall": more,
         "strong_90_count": high_fit,
+        # Keep the loss framing (locked) + high-fit tier, but lead the value with ongoing
+        # monitoring/alerts rather than raw depth — a good ranker makes "N more rows" a weak
+        # pitch (the feed-depth wall is trivially bypassed by re-querying). The felt value is
+        # not having to check.
         "message": (
             f"Free shows your top {shown} matches — {more_str} more are locked{tier}. "
-            f"Radar unlocks the full ranked feed you're scored against."
+            f"Radar unlocks the full ranked feed and alerts you the moment a new high-fit "
+            f"match appears — so you catch strong roles as they're posted, not whenever you look."
         ),
     }
 
@@ -119,6 +124,10 @@ def search_matches(
     (score-ranked highest first). Do NOT use this to find recent matches — use check_new_matches instead.
     Parameters: query (search job title/keywords), salary_min (USD floor, not ceiling), location (e.g. "SF" or "Remote"),
     status (e.g. "applied", "interested", "dismissed"), page (25 jobs per page). All parameters optional.
+    salary_min matches on RANGE OVERLAP, not the low end: a job is kept if its pay range REACHES the
+    floor (its upper bound >= salary_min), so results can include a job whose lower bound sits below
+    salary_min (e.g. salary_min=150k returns a 100k–200k role). Read each row's salary_low/salary_high
+    to judge fit.
     There is no score filter — every row carries a `score`; filter on it yourself after the call.
     Each row's `id` is the job_id you pass to get_job, log_application, save_match and dismiss_match."""
     try:
