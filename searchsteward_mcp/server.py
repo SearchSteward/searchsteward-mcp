@@ -401,6 +401,77 @@ def restore_match(job_id: int) -> Dict[str, Any]:
         return _err(exc)
 
 
+# Categories this tool will write. Deliberately NARROWER than what
+# PATCH /api/v1/user/settings accepts: the weights_* and domain_affinities
+# categories hold free-form keyword->weight maps with no fixed field set, so the
+# route cannot type-check them and a well-meaning agent could quietly reshape the
+# ranker. The four below map 1:1 to typed leaf models server-side, so an unknown
+# field comes back 422 instead of being written.
+_WRITABLE_PREFERENCE_CATEGORIES = {
+    "compensation_location",
+    "gates_hard",
+    "title_preferences",
+    "thresholds",
+}
+
+
+@mcp.tool()
+def get_preferences() -> Dict[str, Any]:
+    """Read the search preferences that decide which jobs reach your SearchSteward feed —
+    location (primary_zip, radius_miles, location_policy), compensation floor, target titles,
+    excluded keywords and score thresholds. Secrets are masked by the server. Call this BEFORE
+    update_preferences: that tool replaces only the keys you send, so you need the current values
+    to change one thing without guessing the rest. Use this to explain WHY a job did or did not
+    appear before changing anything."""
+    try:
+        return _c().get_user_settings()
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
+def update_preferences(
+    # Literal, not str: this renders as an ENUM in the tool schema, so the model is
+    # constrained when it PICKS the category rather than corrected by an error after
+    # the call — the same reason submit_match_verdict types its verdict this way.
+    category: Literal["compensation_location", "gates_hard", "title_preferences", "thresholds"],
+    updates: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Change the search preferences that drive your SearchSteward matches, then re-rank the feed.
+
+    ⚠ This RE-SCORES YOUR WHOLE FEED. Jobs can disappear as well as appear. Read
+    get_preferences first and confirm the change with the user before calling — do not infer a
+    preference change from a single dismissed job; use dismiss_match for that.
+
+    category must be one of:
+      'compensation_location' — primary_zip, radius_miles, min_salary_usd, target_salary_usd
+      'gates_hard'            — location_policy ('any'|'onsite_local'|'remote_only'),
+                                location_hard_filter (bool: only show jobs inside radius_miles),
+                                salary_floor, negative_disqualifiers
+      'title_preferences'     — positive_keywords, negative_disqualifiers, require_one_positive_keyword
+      'thresholds'            — score cutoffs
+
+    updates is a partial dict — send ONLY the keys you are changing. Unknown fields are rejected
+    (422) rather than written. Example: to stop showing jobs outside a 30-mile commute, send
+    category='gates_hard', updates={'location_hard_filter': True} — after confirming
+    compensation_location.primary_zip and radius_miles are actually set, or the filter has nothing
+    to measure against."""
+    if category not in _WRITABLE_PREFERENCE_CATEGORIES:
+        return {
+            "error": "unsupported_category",
+            "detail": (
+                f"{category!r} is not writable through this tool. "
+                f"Allowed: {', '.join(sorted(_WRITABLE_PREFERENCE_CATEGORIES))}."
+            ),
+        }
+    if not isinstance(updates, dict) or not updates:
+        return {"error": "empty_updates", "detail": "Send at least one key to change."}
+    try:
+        return _c().patch_user_settings(category, updates)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
 @mcp.tool()
 def list_questions(application_id: Optional[int] = None) -> Dict[str, Any]:
     """List all interview/application questions you've saved to your question bank. Optionally filter by

@@ -110,6 +110,12 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 | `get_offer` | Offer/compensation details for an application. |
 | `get_negotiation_playbook` | SearchSteward's offer-negotiation playbook (**Radar**; runs an LLM job). |
 
+**Tune your search**
+| Tool | What it does |
+|------|--------------|
+| `get_preferences` | Read the settings that decide which jobs reach your feed — location (ZIP, radius, policy), salary floor, target titles, excluded keywords, thresholds. |
+| `update_preferences` | Change those settings and re-rank the feed. ⚠ **Re-scores your whole feed — jobs can disappear as well as appear.** Read `get_preferences` first and send only the keys you're changing. |
+
 **Audit match quality**
 | Tool | What it does |
 |------|--------------|
@@ -127,6 +133,7 @@ A key uses **your plan's limits — identical to the web app**; a free account m
 | Search, read, résumé (`search_matches`, `get_job`, `get_resume`) | ✅ | ✅ |
 | Track & triage (`log_application`, `save_match`, `dismiss_match`, …) | ✅ | ✅ |
 | Question bank & match-quality review | ✅ | ✅ |
+| Read & change search preferences (`get_preferences`, `update_preferences`) | ✅ | ✅ |
 | `check_new_matches` (manual pull) | ✅ | ✅ |
 | Full match-feed depth (beyond the free cap) | capped + upgrade hint | ✅ full |
 | `get_negotiation_playbook` | ❌ 402 | ✅ |

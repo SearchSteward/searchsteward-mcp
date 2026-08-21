@@ -461,3 +461,69 @@ def test_check_new_matches_error_surfaced(monkeypatch, _fake):
     monkeypatch.setattr(_fake, "get_jobs", boom)
     out = _fn("check_new_matches")()
     assert out["error"] is True
+
+
+# --- preferences primitive -------------------------------------------------
+#
+# The audit that motivated this found agents could SEE why a job matched but not
+# REPAIR it: location is the product's #1 complaint class and no MCP tool could
+# touch a user's ZIP or radius. The audit named PATCH /api/v1/app-settings as the
+# endpoint — that is ADMIN-ONLY and writes GLOBAL settings plus Gmail
+# credentials. The correct user-scoped route is PATCH /api/v1/user/settings.
+
+class _PrefsClient:
+    def __init__(self):
+        self.calls = []
+
+    def get_user_settings(self):
+        self.calls.append(("get",))
+        return {"compensation_location": {"primary_zip": "77479", "radius_miles": 30.0},
+                "gates_hard": {"location_hard_filter": False}}
+
+    def patch_user_settings(self, category, updates):
+        self.calls.append(("patch", category, updates))
+        return {"status": "success"}
+
+
+def test_get_preferences_reads_through(monkeypatch):
+    fake = _PrefsClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.get_preferences()
+    assert out["compensation_location"]["primary_zip"] == "77479"
+    assert fake.calls == [("get",)]
+
+
+def test_update_preferences_sends_only_the_changed_key(monkeypatch):
+    fake = _PrefsClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.update_preferences("gates_hard", {"location_hard_filter": True})
+    assert out == {"status": "success"}
+    assert fake.calls == [("patch", "gates_hard", {"location_hard_filter": True})]
+
+
+def test_update_preferences_refuses_untyped_categories(monkeypatch):
+    """weights_*/domain_affinities hold free-form maps the route cannot type-check,
+    so an agent could quietly reshape the ranker. Refuse before the HTTP call."""
+    fake = _PrefsClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.update_preferences("weights_title", {"python": 99})
+    assert out["error"] == "unsupported_category"
+    assert fake.calls == [], "must not reach the API at all"
+
+
+def test_update_preferences_refuses_an_empty_payload(monkeypatch):
+    fake = _PrefsClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    assert server.update_preferences("gates_hard", {})["error"] == "empty_updates"
+    assert fake.calls == []
+
+
+def test_update_preferences_surfaces_a_422_as_an_error(monkeypatch):
+    """An unknown field is rejected server-side; the agent must see that, not a success."""
+    class _Boom(_PrefsClient):
+        def patch_user_settings(self, category, updates):
+            raise ApiError(422, "unknown field 'radius_kilometres'")
+
+    monkeypatch.setattr(server, "_c", lambda: _Boom())
+    out = server.update_preferences("compensation_location", {"radius_kilometres": 50})
+    assert "error" in out
