@@ -155,6 +155,21 @@ class SearchStewardClient:
         body = {"note": note} if note else {}
         return self._request("POST", f"/api/v1/applications/{job_id}/save-watch", json=body)
 
+    def get_user_settings(self) -> Any:
+        """Merged user settings (DB + YAML defaults), secrets masked server-side."""
+        return self._request("GET", "/api/v1/user/settings")
+
+    def patch_user_settings(self, category: str, updates: Dict[str, Any]) -> Any:
+        """Partial update of ONE settings category.
+
+        The route validates scoring categories against typed leaf models, so an
+        unknown field is a 422 rather than a silent write, and it triggers the
+        criteria-version bump + hash invalidation + feed refresh itself.
+        """
+        return self._request(
+            "PATCH", "/api/v1/user/settings", json={"category": category, "updates": updates}
+        )
+
     def dismiss_match(self, job_id: int, reason_code: str, note: Optional[str] = None) -> Any:
         body = {"reason_code": reason_code, "note": note}
         return self._request("POST", f"/api/v1/jobs/{job_id}/feedback", json=body)
