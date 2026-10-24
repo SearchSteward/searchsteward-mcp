@@ -9,6 +9,7 @@ from __future__ import annotations
 import atexit
 import os
 import re
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
@@ -55,6 +56,9 @@ except importlib.metadata.PackageNotFoundError:  # pragma: no cover - running fr
 
 # One client per process; created lazily so `--help`/import doesn't require the key.
 _client: Optional[SearchStewardClient] = None
+# Hosted connector: the host sets a per-request client (the signed-in user's token) around each tool call.
+# Unset in stdio mode, where the process-wide client above is used.
+current_client: ContextVar[Optional[SearchStewardClient]] = ContextVar("searchsteward_client", default=None)
 
 _MAX_PAGE_SIZE = 25
 _DESC_LIMIT = 4000
@@ -64,6 +68,9 @@ _UNLOCK_NUDGE_CEILING = 200
 
 
 def _c() -> SearchStewardClient:
+    hosted = current_client.get()
+    if hosted is not None:
+        return hosted
     global _client
     if _client is None:
         _client = SearchStewardClient()
