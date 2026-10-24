@@ -472,6 +472,79 @@ def update_preferences(
         return _err(exc)
 
 
+def _current_criteria() -> Optional[Dict[str, Any]]:
+    """The user's saved titles + location, or None when unreadable (e.g. a read_no_pii key)."""
+    try:
+        s = _c().get_user_settings() or {}
+    except Exception:  # noqa: BLE001
+        return None
+    titles = (s.get("title_preferences") or {}).get("positive_keywords") or []
+    location = (s.get("compensation_location") or {}).get("user_location") or None
+    return {"titles": list(titles), "location": location}
+
+
+@mcp.tool()
+def set_up_search(
+    titles: List[str],
+    location: Optional[str] = None,
+    salary_min: Optional[int] = None,
+    work_type: Literal["any", "remote", "hybrid", "onsite"] = "any",
+    keywords: Optional[List[str]] = None,
+    seniority: Optional[List[Literal["Junior", "Mid-level", "Senior", "Staff+", "Executive"]]] = None,
+    confirm: bool = False,
+) -> Dict[str, Any]:
+    """Set up a NEW user's job search from one sentence, e.g. "senior data analyst in Denver,
+    open to remote, $120k+" -> titles=['Senior Data Analyst'], location='Denver, CO',
+    salary_min=120000, work_type='any' ("open to remote" is not remote-only).
+
+    Two steps, always:
+      1. confirm=False (default): writes NOTHING. Returns the criteria exactly as they would be
+         saved. Show them to the user and ask them to confirm or adjust.
+      2. confirm=True, only after the user says yes in chat: saves them and starts their first
+         feed (matches appear within a few minutes; then use search_matches).
+
+    For accounts that already have criteria this never overwrites: it returns their current
+    titles/location so you can ask "replace or adjust?", and changes go through
+    update_preferences with the user's OK. work_type 'remote' means remote-only."""
+    criteria: Dict[str, Any] = {"title_includes": [t.strip() for t in titles if t and t.strip()]}
+    if keywords:
+        criteria["keywords"] = [k.strip() for k in keywords if k and k.strip()]
+    if location and location.strip():
+        criteria["location"] = location.strip()
+    if salary_min:
+        criteria["salary_min"] = int(salary_min)
+    if work_type != "any":
+        criteria["work_type"] = work_type
+    if seniority:
+        criteria["seniority"] = list(seniority)
+    if not criteria["title_includes"] and not criteria.get("keywords"):
+        return {"error": "needs_anchor", "detail": "Give at least one job title (or keyword) to search for."}
+    if not confirm:
+        return {
+            "saved": False,
+            "criteria": criteria,
+            "next": "Show these to the user. Call again with confirm=True only after they agree.",
+        }
+    try:
+        out = _c().preferences_from_search(criteria)
+    except ApiError as exc:
+        if exc.status_code == 409:
+            return {
+                "error": "criteria_exists",
+                "saved": False,
+                "current": _current_criteria(),
+                "next": ("This account already has saved criteria; nothing was changed. Ask the user "
+                         "whether to replace or adjust them, then use update_preferences."),
+            }
+        return _err(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    if out.get("unchanged"):
+        return {"saved": True, "unchanged": True, "criteria": criteria}
+    return {"saved": True, "criteria": criteria, "feed_pending": bool(out.get("feed_pending")),
+            "next": "Their first matches are being scored; check back with search_matches in a few minutes."}
+
+
 @mcp.tool()
 def list_questions(application_id: Optional[int] = None) -> Dict[str, Any]:
     """List all interview/application questions you've saved to your question bank. Optionally filter by

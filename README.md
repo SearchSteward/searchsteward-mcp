@@ -113,6 +113,7 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 **Tune your search**
 | Tool | What it does |
 |------|--------------|
+| `set_up_search` | Set up a new account's search from one sentence ("senior data analyst in Denver, open to remote, $120k+"). Shows the criteria first and saves only when called again with `confirm=True` after you agree. Never overwrites existing criteria. |
 | `get_preferences` | Read the settings that decide which jobs reach your feed — location (ZIP, radius, policy), salary floor, target titles, excluded keywords, thresholds. |
 | `update_preferences` | Change those settings and re-rank the feed. ⚠ **Re-scores your whole feed — jobs can disappear as well as appear.** Read `get_preferences` first and send only the keys you're changing. |
 
@@ -133,7 +134,7 @@ A key uses **your plan's limits — identical to the web app**; a free account m
 | Search, read, résumé (`search_matches`, `get_job`, `get_resume`) | ✅ | ✅ |
 | Track & triage (`log_application`, `save_match`, `dismiss_match`, …) | ✅ | ✅ |
 | Question bank & match-quality review | ✅ | ✅ |
-| Read & change search preferences (`get_preferences`, `update_preferences`) | ✅ | ✅ |
+| Set up, read & change search preferences (`set_up_search`, `get_preferences`, `update_preferences`) | ✅ | ✅ |
 | `check_new_matches` (manual pull) | ✅ | ✅ |
 | Full match-feed depth (beyond the free cap) | capped + upgrade hint | ✅ full |
 | `get_negotiation_playbook` | ❌ 402 | ✅ |

@@ -527,3 +527,80 @@ def test_update_preferences_surfaces_a_422_as_an_error(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: _Boom())
     out = server.update_preferences("compensation_location", {"radius_kilometres": 50})
     assert "error" in out
+
+
+# --- set up a search by chat (card mcp-chat-setup) ---------------------------
+
+class _SetupClient:
+    def __init__(self, post_exc=None, post_out=None, settings=None):
+        self.calls, self._exc, self._out, self._settings = [], post_exc, post_out, settings
+
+    def preferences_from_search(self, body):
+        self.calls.append(("post", body))
+        if self._exc:
+            raise self._exc
+        return self._out or {"applied": True, "feed_pending": True}
+
+    def get_user_settings(self):
+        self.calls.append(("get",))
+        if self._settings is None:
+            raise ApiError(403, "This API key cannot read personal data")
+        return self._settings
+
+
+def test_set_up_search_preview_writes_nothing(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Senior Data Analyst"], location="Denver, CO", salary_min=120000)
+    assert out["saved"] is False
+    assert out["criteria"] == {"title_includes": ["Senior Data Analyst"], "location": "Denver, CO",
+                               "salary_min": 120000}
+    assert fake.calls == []  # no read, no write: safe to call repeatedly
+
+
+def test_set_up_search_confirm_posts_the_previewed_criteria(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    preview = server.set_up_search(["Data Analyst"], work_type="hybrid")["criteria"]
+    out = server.set_up_search(["Data Analyst"], work_type="hybrid", confirm=True)
+    assert out["saved"] is True and out["feed_pending"] is True
+    assert fake.calls == [("post", preview)]
+
+
+def test_set_up_search_any_work_type_is_not_sent(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    server.set_up_search(["Data Analyst"], confirm=True)
+    assert "work_type" not in fake.calls[0][1]
+
+
+def test_set_up_search_existing_criteria_quotes_them_and_changes_nothing(monkeypatch):
+    fake = _SetupClient(post_exc=ApiError(409, {"error": "criteria_exists"}),
+                        settings={"title_preferences": {"positive_keywords": ["Analyst"]},
+                                  "compensation_location": {"user_location": "Austin, TX"}})
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Product Manager"], confirm=True)
+    assert out["error"] == "criteria_exists" and out["saved"] is False
+    assert out["current"] == {"titles": ["Analyst"], "location": "Austin, TX"}
+    assert [c[0] for c in fake.calls] == ["post", "get"]  # no PATCH, ever
+
+
+def test_set_up_search_existing_criteria_unreadable_key_still_refuses(monkeypatch):
+    fake = _SetupClient(post_exc=ApiError(409, {"error": "criteria_exists"}), settings=None)
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Product Manager"], confirm=True)
+    assert out["error"] == "criteria_exists" and out["current"] is None
+
+
+def test_set_up_search_identical_retry_reports_unchanged(monkeypatch):
+    fake = _SetupClient(post_out={"applied": False, "unchanged": True, "feed_pending": False})
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Data Analyst"], confirm=True)
+    assert out["saved"] is True and out["unchanged"] is True
+
+
+def test_set_up_search_needs_a_title(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    assert server.set_up_search(["  "], location="NYC", confirm=True)["error"] == "needs_anchor"
+    assert fake.calls == []
