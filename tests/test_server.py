@@ -536,7 +536,7 @@ def test_practice_interview_prompt_renders_with_the_job_id():
     result = asyncio.run(server.mcp.get_prompt("practice_interview", {"job_id": "4242"}))
     text = result.messages[0].content.text
     assert "get_job(job_id=4242)" in text
-    for tool in ("get_resume()", "list_questions()", "save_question"):
+    for tool in ("get_resume()", "list_questions()", "save_question", "list_applications()"):
         assert tool in text
     assert "ONE question at a time" in text
 

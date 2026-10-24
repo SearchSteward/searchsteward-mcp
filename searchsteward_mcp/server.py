@@ -520,7 +520,9 @@ def practice_interview(job_id: int) -> str:
    of one sentence. Then ask the next question.
 4. When we finish (or I say stop), give a summary: my 3 weakest spots with one concrete fix each,
    and the strongest story I told. Offer to save any question and my improved answer with
-   save_question(question, answer, application_id) if this job is tracked as an application."""
+   save_question(question, answer, application_id) if this job is tracked as an application. To
+   find application_id, call list_applications() and take the id of the row whose job_id is {job_id};
+   if there is none, offer log_application first."""
 
 
 def _as_dict(data: Any, key: str) -> Dict[str, Any]:
