@@ -558,7 +558,8 @@ def test_set_up_search_preview_writes_nothing(monkeypatch):
     out = server.set_up_search(["Senior Data Analyst"], location="Denver, CO", salary_min=120000)
     assert out["saved"] is False
     assert out["criteria"] == {"title_includes": ["Senior Data Analyst"], "location": "Denver, CO",
-                               "salary_min": 120000}
+                               "radius_miles": 30, "salary_min": 120000}
+    assert out["summary"] == "Senior Data Analyst, within 30 miles of Denver, CO, plus remote, $120,000+"
     assert fake.calls == []  # no read, no write: safe to call repeatedly
 
 
@@ -691,3 +692,20 @@ def test_why_is_my_feed_thin_surfaces_errors(monkeypatch, _fake):
     _fake.get_activation_status = boom
     out = _fn("why_is_my_feed_thin")()
     assert out["status"] == 403 and "'full' scope" in out["why"]
+
+
+
+def test_set_up_search_uses_a_named_radius_and_sends_it(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Nurse"], location="Austin, TX", radius_miles=15, work_type="onsite")
+    assert out["summary"] == "Nurse, within 15 miles of Austin, TX"
+    server.set_up_search(["Nurse"], location="Austin, TX", radius_miles=15, work_type="onsite", confirm=True)
+    assert fake.calls[0][1]["radius_miles"] == 15
+
+
+def test_set_up_search_sends_no_radius_without_a_location(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Data Analyst"], work_type="remote")
+    assert "radius_miles" not in out["criteria"] and out["summary"] == "Data Analyst, remote only"

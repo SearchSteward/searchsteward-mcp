@@ -563,6 +563,26 @@ def why_is_my_feed_thin() -> Dict[str, Any]:
     return out
 
 
+# The onboarding wizard's default commute radius (webapp onboarding/preferences/page.tsx).
+_DEFAULT_RADIUS_MILES = 30
+
+
+def _criteria_summary(c: Dict[str, Any]) -> str:
+    """One plain sentence of what will be saved, for the user to confirm."""
+    parts = [" / ".join(c["title_includes"]) if c.get("title_includes") else ", ".join(c.get("keywords") or [])]
+    loc, wt = c.get("location"), c.get("work_type")
+    if wt == "remote":
+        parts.append("remote only")
+    elif loc:
+        near = f"within {c['radius_miles']} miles of {loc}"
+        parts.append(near if wt in ("onsite", "hybrid") else f"{near}, plus remote")
+        if wt == "hybrid":
+            parts[-1] += " (hybrid or remote)"
+    if c.get("salary_min"):
+        parts.append(f"${c['salary_min']:,}+")
+    return ", ".join(p for p in parts if p)
+
+
 def _current_criteria() -> Optional[Dict[str, Any]]:
     """The user's saved titles + location, or None when unreadable (e.g. a read_no_pii key)."""
     try:
@@ -582,11 +602,14 @@ def set_up_search(
     work_type: Literal["any", "remote", "hybrid", "onsite"] = "any",
     keywords: Optional[List[str]] = None,
     seniority: Optional[List[Literal["Junior", "Mid-level", "Senior", "Staff+", "Executive"]]] = None,
+    radius_miles: Optional[int] = None,
     confirm: bool = False,
 ) -> Dict[str, Any]:
     """Set up a NEW user's job search from one sentence, e.g. "senior data analyst in Denver,
     open to remote, $120k+" -> titles=['Senior Data Analyst'], location='Denver, CO',
     salary_min=120000, work_type='any' ("open to remote" is not remote-only).
+    radius_miles is the commute radius around location; leave it unset unless the user names
+    one, and the wizard's default (30) is used and shown back in `summary`.
 
     Two steps, always:
       1. confirm=False (default): writes NOTHING. Returns the criteria exactly as they would be
@@ -602,6 +625,7 @@ def set_up_search(
         criteria["keywords"] = [k.strip() for k in keywords if k and k.strip()]
     if location and location.strip():
         criteria["location"] = location.strip()
+        criteria["radius_miles"] = int(radius_miles) if radius_miles and radius_miles > 0 else _DEFAULT_RADIUS_MILES
     if salary_min:
         criteria["salary_min"] = int(salary_min)
     if work_type != "any":
@@ -614,6 +638,7 @@ def set_up_search(
         return {
             "saved": False,
             "criteria": criteria,
+            "summary": _criteria_summary(criteria),
             "next": "Show these to the user. Call again with confirm=True only after they agree.",
         }
     try:
