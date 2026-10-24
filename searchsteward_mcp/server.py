@@ -7,12 +7,14 @@ SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
 from __future__ import annotations
 
 import atexit
+import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from .client import ApiError, ConfigError, SearchStewardClient
+from .client import DEFAULT_BASE, ApiError, ConfigError, SearchStewardClient
 
 mcp = FastMCP("searchsteward")
 
@@ -53,6 +55,12 @@ def _err(exc: Exception) -> Dict[str, Any]:
     return {"error": True, "detail": f"{type(exc).__name__}: {exc}"}
 
 
+def _upgrade_url(medium: str) -> str:
+    """Billing page, tagged so a checkout reached from an MCP CTA can be attributed to the tool."""
+    base = (os.environ.get("SEARCHSTEWARD_API_BASE") or DEFAULT_BASE).rstrip("/")
+    return f"{base}/settings/billing?utm_source=mcp&utm_medium={medium}"
+
+
 def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, Any]]:
     """Free-tier "unlock the rest" CTA for search_matches.
 
@@ -89,12 +97,54 @@ def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, A
         # monitoring/alerts rather than raw depth — a good ranker makes "N more rows" a weak
         # pitch (the feed-depth wall is trivially bypassed by re-querying). The felt value is
         # not having to check.
+        "url": _upgrade_url("search_matches"),
         "message": (
             f"Free shows your top {shown} matches — {more_str} more are locked{tier}. "
             f"Radar unlocks the full ranked feed and alerts you the moment a new high-fit "
             f"match appears — so you catch strong roles as they're posted, not whenever you look."
         ),
     }
+
+
+def _seen_on_site(company: Any, last_seen: Any, now: Optional[datetime] = None) -> Optional[str]:
+    """The app's "Seen on {company}'s site today/yesterday" line (webapp lib/seenOnSite.ts, #2964):
+    the last time our scraper found the role in the employer's own list. Said only within 48h,
+    and as "seen", never "verified"."""
+    if not isinstance(last_seen, str) or not last_seen:
+        return None
+    try:
+        dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    hours = ((now or datetime.now(timezone.utc)) - dt).total_seconds() // 3600
+    if hours >= 48:
+        return None
+    site = f"{company}'s site" if company else "the employer's site"
+    return f"Seen on {site} {'today' if hours < 24 else 'yesterday'}"
+
+
+def _norm(s: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+
+
+def _fold(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Same company + title at several locations -> one row with `also_in` (the app's AlsoIn fold,
+    #3251). Display-only and per page: the first row in served order wins, nothing is dropped
+    (every folded row's id stays in also_in), and rows without a title never fold."""
+    winners: Dict[str, Dict[str, Any]] = {}
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        title = _norm(r.get("title"))
+        key = f"{_norm(r.get('company'))}|{title}"
+        w = winners.get(key) if title else None
+        if w is None:
+            if title:
+                winners[key] = r
+            out.append(r)
+        else:
+            w.setdefault("also_in", []).append({"id": r.get("id"), "location": r.get("location")})
+    return out
 
 
 def _row(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -108,6 +158,8 @@ def _row(job: Dict[str, Any]) -> Dict[str, Any]:
         "salary_high": job.get("salary_high"),
         "score": job.get("score_v2", job.get("score")),
         "discovered": job.get("date_discovered") or job.get("date_added"),
+        "band": job.get("fit_band_v2"),
+        "seen_on_site": _seen_on_site(job.get("company"), job.get("source_last_seen_at")),
     }
 
 
@@ -142,7 +194,7 @@ def search_matches(
     except Exception as exc:  # noqa: BLE001 — surface every failure to the model
         return _err(exc)
     jobs = data.get("jobs", data) if isinstance(data, dict) else data
-    rows = [_row(j) for j in jobs] if isinstance(jobs, list) else []
+    rows = _fold([_row(j) for j in jobs]) if isinstance(jobs, list) else []
     result: Dict[str, Any] = {"matches": rows, "page": page, "count": len(rows)}
     if isinstance(data, dict):
         upgrade = _feed_depth_upgrade(data, page)
@@ -151,7 +203,9 @@ def search_matches(
     return result
 
 
-_HIGH_FIT_SCORE = 90
+# The app's match bands (user_job_states.fit_band_v2). Scores run past 100, and in prod
+# (10-24) only 4,955 of 9,359 Strong rows scored >= 90, so a score cutoff is not "strong".
+_BANDS = {"Strong": {"Strong Match"}, "Good": {"Strong Match", "Good Match"}}
 
 
 def _discovered_within(iso_str: Any, cutoff: datetime) -> bool:
@@ -169,16 +223,15 @@ def _discovered_within(iso_str: Any, cutoff: datetime) -> bool:
 
 
 @mcp.tool()
-def check_new_matches(hours: int = 48) -> Dict[str, Any]:
-    """Check for NEW high-fit matches discovered in the last N hours. Returns only roles scored 90%+
-    that were discovered within your time window (default 48h), sorted highest score first. Use this
-    at the start of a session to catch recent strong opportunities without browsing the full feed.
-    Do NOT use this to filter by salary/location — use search_matches with filters instead. Hours default
-    48 (2 days); values below 1 are clamped to 1. If no high-fit roles are found in the window,
-    returns an empty list with a message.
-    NOTE: scans only the first page (top 25 score-ranked matches). Since results are ranked
-    highest-score-first, new 90%+ roles are near the top, but a role scored 90%+ that sits below
-    rank 25 will not be seen. For an exhaustive walk, page through search_matches."""
+def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Strong") -> Dict[str, Any]:
+    """Check for NEW matches discovered in the last N hours, in the app's match bands. band='Strong'
+    (default) returns Strong Matches only; band='Good' returns Strong and Good Matches. Sorted highest
+    score first. Use this at the start of a session to catch recent strong opportunities without
+    browsing the full feed. Do NOT use this to filter by salary/location — use search_matches with
+    filters instead. Hours default 48 (2 days); values below 1 are clamped to 1. If none are found
+    in the window, returns an empty list with a message.
+    NOTE: scans only the first page (top 25 ranked matches), so a new match ranked below 25 will not
+    be seen. For an exhaustive walk, page through search_matches."""
     try:
         data = _c().get_jobs({"page": 1, "page_size": _MAX_PAGE_SIZE})
     except Exception as exc:  # noqa: BLE001
@@ -187,25 +240,29 @@ def check_new_matches(hours: int = 48) -> Dict[str, Any]:
     if not isinstance(jobs, list):
         jobs = []
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, int(hours)))
-    fresh = []
-    for j in jobs:
+    wanted = _BANDS.get(band, _BANDS["Strong"])
+    fresh = [_row(j) for j in jobs
+             if j.get("fit_band_v2") in wanted
+             and _discovered_within(j.get("date_discovered") or j.get("date_added"), cutoff)]
+
+    def _score(r: Dict[str, Any]) -> float:
         try:
-            score = float(j.get("score_v2", j.get("score")) or 0)
+            return float(r.get("score") or 0)
         except (TypeError, ValueError):
-            continue
-        discovered = j.get("date_discovered") or j.get("date_added")
-        if score >= _HIGH_FIT_SCORE and _discovered_within(discovered, cutoff):
-            fresh.append(_row(j))
-    fresh.sort(key=lambda r: r.get("score") or 0, reverse=True)
-    result: Dict[str, Any] = {"new_high_fit": fresh, "count": len(fresh), "window_hours": hours}
+            return 0.0
+
+    fresh = _fold(sorted(fresh, key=_score, reverse=True))
+    label = "Strong" if band == "Strong" else "Strong or Good"
+    result: Dict[str, Any] = {"new_high_fit": fresh, "count": len(fresh), "window_hours": hours, "band": band}
     if not fresh:
-        result["message"] = f"No new 90%+ matches in the last {hours}h."
+        result["message"] = f"No new {label} Matches in the last {hours}h."
     else:
         # Conversion pointer: the pull tool is the manual version of the paid push.
         result["upgrade"] = {
             "reason": "high_fit_alert",
+            "url": _upgrade_url("check_new_matches"),
             "message": (
-                "Radar emails you the moment a new 90%+ match appears — "
+                "Radar emails you the moment a new Strong Match appears — "
                 "so you don't have to check manually."
             ),
         }
@@ -309,7 +366,10 @@ def get_negotiation_playbook(application_id: int) -> Dict[str, Any]:
         job = _c().poll_llm_job(job_id)
         return job.get("result", job)
     except Exception as exc:  # noqa: BLE001
-        return _err(exc)
+        out = _err(exc)
+        if isinstance(exc, ApiError) and exc.status_code == 402:
+            out["upgrade_url"] = _upgrade_url("negotiation")
+        return out
 
 
 @mcp.tool()
@@ -470,6 +530,32 @@ def update_preferences(
         return _c().patch_user_settings(category, updates)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+
+
+_THIN_KEYS = ("state", "feed_count", "strong_count", "filtered_out_count", "evaluated_below_floor_count",
+              "thin_constraint", "widen_remote_n", "binding_constraint", "location_drag")
+
+
+@mcp.tool()
+def why_is_my_feed_thin() -> Dict[str, Any]:
+    """Explain a thin or empty feed with the app's own diagnosis (the panel on the matches page):
+    the feed and Strong counts, and when the feed is thin, the ONE saved filter that narrows it
+    most (`thin_constraint`: which filter, its label, and how many jobs it excludes). Read-only.
+    Explain the cause to the user; if they want to loosen it, use get_preferences then
+    update_preferences with their OK. No `thin_constraint` means there is no single filter to
+    blame (or the diagnosis is older than the user's current criteria and is not shown)."""
+    try:
+        status = _c().get_activation_status() or {}
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    feed = status.get("first_feed_status") or status.get("feed") or {}
+    out = {k: feed[k] for k in _THIN_KEYS if k in feed}
+    out["thin_threshold"] = status.get("thin_feed_threshold")
+    out["thin_strong_min"] = status.get("thin_feed_strong_min")
+    guidance = status.get("feed_guidance")
+    if guidance:
+        out["guidance"] = guidance
+    return out
 
 
 def _current_criteria() -> Optional[Dict[str, Any]]:
