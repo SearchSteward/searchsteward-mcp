@@ -83,23 +83,19 @@ def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, A
     if more <= 0:
         return None
     more_str = f"{more}+" if total_strong >= _UNLOCK_NUDGE_CEILING else str(more)
-    try:
-        high_fit = int(data.get("strong_90_count") or 0)
-    except (TypeError, ValueError):
-        high_fit = 0
-    tier = f", {high_fit} of them scored 90%+" if high_fit > 0 else ""
+    # No "N scored 90%+" tier: /jobs' only high-fit count is score >= 90, which is not the app's
+    # Strong band (scores pass 100), and mixing "90%+" with "Strong" copy misleads.
     return {
         "reason": "feed_depth",
         "feed_cap": shown,
         "more_behind_paywall": more,
-        "strong_90_count": high_fit,
         # Keep the loss framing (locked) + high-fit tier, but lead the value with ongoing
         # monitoring/alerts rather than raw depth — a good ranker makes "N more rows" a weak
         # pitch (the feed-depth wall is trivially bypassed by re-querying). The felt value is
         # not having to check.
         "url": _upgrade_url("search_matches"),
         "message": (
-            f"Free shows your top {shown} matches — {more_str} more are locked{tier}. "
+            f"Free shows your top {shown} matches — {more_str} more are locked. "
             f"Radar unlocks the full ranked feed and alerts you the moment a new high-fit "
             f"match appears — so you catch strong roles as they're posted, not whenever you look."
         ),
@@ -223,10 +219,10 @@ def _discovered_within(iso_str: Any, cutoff: datetime) -> bool:
 
 
 @mcp.tool()
-def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Strong") -> Dict[str, Any]:
-    """Check for NEW matches discovered in the last N hours, in the app's match bands. band='Strong'
-    (default) returns Strong Matches only; band='Good' returns Strong and Good Matches. Sorted highest
-    score first. Use this at the start of a session to catch recent strong opportunities without
+def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Good") -> Dict[str, Any]:
+    """Check for NEW matches discovered in the last N hours, in the app's match bands. band='Good'
+    (default) returns Strong and Good Matches; band='Strong' returns Strong Matches only. Every row
+    carries its `band`. Sorted highest score first. Use this at the start of a session to catch recent strong opportunities without
     browsing the full feed. Do NOT use this to filter by salary/location — use search_matches with
     filters instead. Hours default 48 (2 days); values below 1 are clamped to 1. If none are found
     in the window, returns an empty list with a message.
@@ -240,7 +236,7 @@ def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Strong
     if not isinstance(jobs, list):
         jobs = []
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, int(hours)))
-    wanted = _BANDS.get(band, _BANDS["Strong"])
+    wanted = _BANDS.get(band, _BANDS["Good"])
     fresh = [_row(j) for j in jobs
              if j.get("fit_band_v2") in wanted
              and _discovered_within(j.get("date_discovered") or j.get("date_added"), cutoff)]
@@ -256,6 +252,8 @@ def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Strong
     result: Dict[str, Any] = {"new_high_fit": fresh, "count": len(fresh), "window_hours": hours, "band": band}
     if not fresh:
         result["message"] = f"No new {label} Matches in the last {hours}h."
+        if band == "Strong":
+            result["message"] += " Try band='Good' to include Good Matches."
     else:
         # Conversion pointer: the pull tool is the manual version of the paid push.
         result["upgrade"] = {
@@ -546,6 +544,13 @@ def why_is_my_feed_thin() -> Dict[str, Any]:
     blame (or the diagnosis is older than the user's current criteria and is not shown)."""
     try:
         status = _c().get_activation_status() or {}
+    except ApiError as exc:
+        out = _err(exc)
+        if exc.status_code == 403:
+            out["why"] = ("The diagnosis includes your saved target titles, which a 'read_no_pii' "
+                          "API key is not allowed to read. Use a key with 'full' scope "
+                          "(Settings > API keys) to run this tool.")
+        return out
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
     feed = status.get("first_feed_status") or status.get("feed") or {}

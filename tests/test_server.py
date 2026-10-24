@@ -328,13 +328,14 @@ def test_upgrade_cta_fires_for_capped_free_user(monkeypatch, _fake):
     assert "50" in up["message"]  # feed-cap framing, honest about the feed size
 
 
-def test_upgrade_cta_includes_high_fit_tier(monkeypatch, _fake):
+def test_upgrade_cta_has_no_score_percent_tier(monkeypatch, _fake):
+    """strong_90_count is score >= 90, not the Strong band; the CTA must not say "90%+"."""
     _capped_feed(monkeypatch, _fake, is_free=True, total_strong=150, shown=50, strong_90=12)
     out = _fn("search_matches")(query="x")
     msg = out["upgrade"]["message"]
-    assert "12" in msg and "90%+" in msg
+    assert "%" not in msg and "12" not in msg
     assert "locked" in msg  # loss framing
-    assert out["upgrade"]["strong_90_count"] == 12
+    assert "strong_90_count" not in out["upgrade"]
 
 
 def test_upgrade_cta_omits_tier_when_zero(monkeypatch, _fake):
@@ -448,8 +449,8 @@ def test_check_new_matches_excludes_old(monkeypatch, _fake):
 
 def test_check_new_matches_excludes_low_score(monkeypatch, _fake):
     monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(80, 2)]})
-    out = _fn("check_new_matches")()
-    assert out["count"] == 0
+    out = _fn("check_new_matches")(band="Strong")
+    assert out["count"] == 0 and "band='Good'" in out["message"]
 
 
 def test_check_new_matches_custom_window(monkeypatch, _fake):
@@ -615,7 +616,7 @@ def test_check_new_matches_goes_by_band_not_score(monkeypatch, _fake):
     """Prod 10-24: half the Strong rows score < 90 and scores pass 100, so 90 is not 'strong'."""
     jobs = [_hf_job(86, 2, 1, "Strong Match"), _hf_job(95, 2, 2, "Good Match")]
     monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": jobs})
-    out = _fn("check_new_matches")()
+    out = _fn("check_new_matches")(band="Strong")
     assert [r["id"] for r in out["new_high_fit"]] == [1]
     assert out["new_high_fit"][0]["band"] == "Strong Match"
 
@@ -623,8 +624,9 @@ def test_check_new_matches_goes_by_band_not_score(monkeypatch, _fake):
 def test_check_new_matches_good_band_includes_strong_and_good(monkeypatch, _fake):
     jobs = [_hf_job(86, 2, 1, "Strong Match"), _hf_job(78, 2, 2, "Good Match"), _hf_job(60, 2, 3, "Weak Match")]
     monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": jobs})
-    out = _fn("check_new_matches")(band="Good")
+    out = _fn("check_new_matches")()  # Good is the default: a first call must not come back empty
     assert sorted(r["id"] for r in out["new_high_fit"]) == [1, 2]
+    assert {r["band"] for r in out["new_high_fit"]} == {"Strong Match", "Good Match"}
 
 
 def test_check_new_matches_copy_has_no_percent(monkeypatch, _fake):
@@ -687,4 +689,5 @@ def test_why_is_my_feed_thin_surfaces_errors(monkeypatch, _fake):
     def boom():
         raise ApiError(403, "This endpoint is not available to API keys")
     _fake.get_activation_status = boom
-    assert _fn("why_is_my_feed_thin")()["status"] == 403
+    out = _fn("why_is_my_feed_thin")()
+    assert out["status"] == 403 and "'full' scope" in out["why"]

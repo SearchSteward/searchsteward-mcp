@@ -82,7 +82,7 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 | Tool | What it does |
 |------|--------------|
 | `search_matches` | Search your job matches (score-ranked; each row carries a `score`). Page size capped at 25. |
-| `check_new_matches` | Pull the new matches discovered in the last N hours (default 48), by the app's match band: Strong (default) or Strong + Good. Scans the top page only — see the tool's own note. |
+| `check_new_matches` | Pull the new matches discovered in the last N hours (default 48), by the app's match band: Strong + Good (default) or Strong only; each row is labelled. Scans the top page only — see the tool's own note. |
 | `get_job` | Full detail for one match — score breakdown, ghost-listing signal, description. |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it natively. |
 
@@ -113,7 +113,7 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 **Tune your search**
 | Tool | What it does |
 |------|--------------|
-| `why_is_my_feed_thin` | The app's own thin-feed diagnosis: feed and Strong counts, and the one saved filter that narrows your feed most, with how many jobs it excludes. Read-only. |
+| `why_is_my_feed_thin` | The app's own thin-feed diagnosis: feed and Strong counts, and the one saved filter that narrows your feed most, with how many jobs it excludes. Read-only; needs a `full`-scope key (it includes your target titles). |
 | `set_up_search` | Set up a new account's search from one sentence ("senior data analyst in Denver, open to remote, $120k+"). Shows the criteria first and saves only when called again with `confirm=True` after you agree. Never overwrites existing criteria. |
 | `get_preferences` | Read the settings that decide which jobs reach your feed — location (ZIP, radius, policy), salary floor, target titles, excluded keywords, thresholds. |
 | `update_preferences` | Change those settings and re-rank the feed. ⚠ **Re-scores your whole feed — jobs can disappear as well as appear.** Read `get_preferences` first and send only the keys you're changing. |
