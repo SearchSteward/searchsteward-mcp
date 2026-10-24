@@ -30,11 +30,14 @@ class ApiError(RuntimeError):
         super().__init__(f"HTTP {status_code}: {detail}")
 
 
-def _require_https(base_url: str) -> str:
+def _require_https(base_url: str, internal: bool = False) -> str:
     parsed = urlparse(base_url)
     host = (parsed.hostname or "").lower()
     is_local = host in {"localhost", "127.0.0.1", "::1"}
-    if parsed.scheme != "https" and not is_local:
+    # The hosted connector calls the API container directly on a private compose network. Only an explicit
+    # `internal=True` (never an env var) opens plain http, and only to the single host `api`.
+    is_internal = internal and parsed.scheme == "http" and host == "api"
+    if parsed.scheme != "https" and not is_local and not is_internal:
         raise ConfigError(
             f"SEARCHSTEWARD_API_BASE must use https (got {base_url!r}); the API key "
             "would otherwise travel in cleartext. localhost is exempt for local dev."
@@ -48,14 +51,16 @@ class SearchStewardClient:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         timeout: float = 30.0,
+        internal: bool = False,
+        extra_headers: Optional[Dict[str, str]] = None,
     ):
         api_key = api_key or os.environ.get("SEARCHSTEWARD_API_KEY")
         if not api_key:
             raise ConfigError("SEARCHSTEWARD_API_KEY is required.")
-        base_url = _require_https(base_url or os.environ.get("SEARCHSTEWARD_API_BASE") or DEFAULT_BASE)
+        base_url = _require_https(base_url or os.environ.get("SEARCHSTEWARD_API_BASE") or DEFAULT_BASE, internal=internal)
         self._http = httpx.Client(
             base_url=base_url,
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={**(extra_headers or {}), "Authorization": f"Bearer {api_key}"},
             timeout=timeout,
         )
 

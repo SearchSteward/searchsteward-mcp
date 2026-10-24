@@ -35,6 +35,26 @@ def test_localhost_http_allowed():
     c.close()  # no raise
 
 
+
+def test_internal_http_only_to_the_api_host_and_only_when_asked():
+    SearchStewardClient(api_key="ss_oat_x", base_url="http://api:8000", internal=True).close()
+    with pytest.raises(ConfigError):
+        SearchStewardClient(api_key="ss_oat_x", base_url="http://api:8000")            # no opt-in
+    with pytest.raises(ConfigError):
+        SearchStewardClient(api_key="ss_oat_x", base_url="http://evil:8000", internal=True)
+    with pytest.raises(ConfigError):
+        SearchStewardClient(api_key="ss_oat_x", base_url="ftp://api:8000", internal=True)
+
+
+def test_extra_headers_are_sent_and_cannot_override_auth():
+    c = SearchStewardClient(api_key="ss_oat_x", base_url="http://api:8000", internal=True,
+                            extra_headers={"X-SS-MCP-Internal": "s" * 32, "Authorization": "Bearer other"})
+    try:
+        assert c._http.headers["X-SS-MCP-Internal"] == "s" * 32
+        assert c._http.headers["Authorization"] == "Bearer ss_oat_x"
+    finally:
+        c.close()
+
 # --- endpoint mapping -------------------------------------------------------
 
 def test_get_jobs_maps_params_and_drops_none():
