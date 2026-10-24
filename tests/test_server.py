@@ -690,4 +690,5 @@ def test_why_is_my_feed_thin_surfaces_errors(monkeypatch, _fake):
         raise ApiError(403, "This endpoint is not available to API keys")
     _fake.get_activation_status = boom
     out = _fn("why_is_my_feed_thin")()
-    assert out["status"] == 403 and "'full' scope" in out["why"]
+    assert out["status"] == 403
+    assert "'full' scope" in out.get("why", "")  # .get: a dropped `why` fails here, not on a KeyError
