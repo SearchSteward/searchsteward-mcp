@@ -123,6 +123,11 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 | `submit_match_verdict` | Record ground truth on one job (`should_surface` / `should_not_surface` / `unsure`). Distinct from `dismiss_match`. |
 | `review_summary` | Count of the verdicts you've submitted, by verdict. |
 
+**Prompts**
+| Prompt | What it does |
+|--------|--------------|
+| `practice_interview(job_id)` | A mock interview for one of your matches: Claude reads the job, your résumé and your saved questions, asks one question at a time, gives feedback on each answer, and ends with your weak spots. Runs entirely in your Claude; no extra SearchSteward usage. |
+
 <a name="free-vs-paid"></a>
 ### Free vs paid
 

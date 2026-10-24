@@ -527,3 +527,22 @@ def test_update_preferences_surfaces_a_422_as_an_error(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: _Boom())
     out = server.update_preferences("compensation_location", {"radius_kilometres": 50})
     assert "error" in out
+
+
+# --- practice_interview prompt (card interview-practice-agent, step 1) ----------
+
+def test_practice_interview_prompt_renders_with_the_job_id():
+    import asyncio
+    result = asyncio.run(server.mcp.get_prompt("practice_interview", {"job_id": "4242"}))
+    text = result.messages[0].content.text
+    assert "get_job(job_id=4242)" in text
+    for tool in ("get_resume()", "list_questions()", "save_question"):
+        assert tool in text
+    assert "ONE question at a time" in text
+
+
+def test_practice_interview_is_a_prompt_not_a_tool():
+    import asyncio
+    prompts = {p.name for p in asyncio.run(server.mcp.list_prompts())}
+    tools = {t.name for t in asyncio.run(server.mcp.list_tools())}
+    assert "practice_interview" in prompts and "practice_interview" not in tools
