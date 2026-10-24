@@ -527,3 +527,19 @@ def test_update_preferences_surfaces_a_422_as_an_error(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: _Boom())
     out = server.update_preferences("compensation_location", {"radius_kilometres": 50})
     assert "error" in out
+
+
+from searchsteward_mcp.server import _c as _REAL_C  # noqa: E402  (captured before the autouse _fake swaps it)
+
+
+def test_hosted_per_request_client_wins_over_the_process_client(monkeypatch):
+    from searchsteward_mcp import server
+    hosted = object()
+    monkeypatch.setattr(server, "_client", object())
+    monkeypatch.setattr(server, "_c", _REAL_C)
+    token = server.current_client.set(hosted)
+    try:
+        assert server._c() is hosted
+    finally:
+        server.current_client.reset(token)
+    assert server._c() is server._client
