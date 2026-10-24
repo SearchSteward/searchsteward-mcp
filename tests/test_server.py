@@ -709,3 +709,18 @@ def test_set_up_search_sends_no_radius_without_a_location(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: fake)
     out = server.set_up_search(["Data Analyst"], work_type="remote")
     assert "radius_miles" not in out["criteria"] and out["summary"] == "Data Analyst, remote only"
+
+
+def test_set_up_search_hybrid_summary_says_hybrid_or_remote(monkeypatch):
+    monkeypatch.setattr(server, "_c", lambda: _SetupClient())
+    out = server.set_up_search(["Data Analyst"], location="Denver, CO", work_type="hybrid")
+    assert out["summary"] == "Data Analyst, within 30 miles of Denver, CO (hybrid or remote)"
+
+
+def test_set_up_search_clamps_a_radius_over_500_and_says_so(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Data Analyst"], location="Denver, CO", radius_miles=2000)
+    assert out["criteria"]["radius_miles"] == 500 and "500 miles" in out.get("note", "")
+    server.set_up_search(["Data Analyst"], location="Denver, CO", radius_miles=2000, confirm=True)
+    assert fake.calls[0][1]["radius_miles"] == 500
