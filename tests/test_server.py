@@ -543,3 +543,17 @@ def test_rows_print_the_display_score_and_rank_on_raw(monkeypatch, _fake):
 def test_rows_fall_back_to_raw_without_display_score(monkeypatch, _fake):
     monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(80, 2)]})
     assert _fn("search_matches")()["matches"][0]["score"] == 80
+
+
+def test_check_new_matches_breaks_display_ties_on_raw(monkeypatch, _fake):
+    """B's M3: raw 100 and 104 both print 100, so a sort on the printed score could put 100 first."""
+    jobs = [dict(_hf_job(100, 2, 1), display_score=100), dict(_hf_job(104, 2, 2), display_score=100)]
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": jobs})
+    assert [r["id"] for r in _fn("check_new_matches")()["new_high_fit"]] == [2, 1]
+
+
+def test_filter_reads_final_score_first_like_the_backend(monkeypatch, _fake):
+    """B's latent split: display_score comes from final_score first; the 90 line must read the same field."""
+    job = dict(_hf_job(91, 2, 1), final_score=88, display_score=94)
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [job]})
+    assert _fn("check_new_matches")()["count"] == 0  # prints 94, so it is not a 95+ row

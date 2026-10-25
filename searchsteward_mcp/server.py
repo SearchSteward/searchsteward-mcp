@@ -98,7 +98,8 @@ def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, A
 
 
 def _raw_score(job: Dict[str, Any]) -> Any:
-    return job.get("score_v2", job.get("score"))
+    # The same field order the backend derives display_score from, so filter and print agree.
+    return next((job[k] for k in ("final_score", "score_v2", "score") if job.get(k) is not None), None)
 
 
 def _row(job: Dict[str, Any]) -> Dict[str, Any]:
