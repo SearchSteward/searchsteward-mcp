@@ -165,6 +165,8 @@ Your key hits the paywall in exactly the place your account does. Radar's *push*
 
 **Tool returns a 403 / "This API key's scope does not permit…"** — your key is a `read_no_pii` key and the tool needs résumé/offer access or writes. Mint a `full` key (see [Key scopes](#key-scopes)) if you need it.
 
+**A new release isn't showing up** — `uvx` keeps using the copy it cached the first time and doesn't check for updates on its own. Run `uvx searchsteward-mcp@latest` once (or use `searchsteward-mcp@latest` as the command in your MCP config) to pick up the newest version.
+
 **Don't paste keys into a shell command line** — `-e` values land in your shell history. If you must, revoke and re-mint afterward.
 
 ---
