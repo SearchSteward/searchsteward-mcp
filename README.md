@@ -82,7 +82,7 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 | Tool | What it does |
 |------|--------------|
 | `search_matches` | Search your job matches (score-ranked; each row carries a `score`). Page size capped at 25. |
-| `check_new_matches` | Pull the new 90%+ matches discovered in the last N hours (default 48). Scans the top page only — see the tool's own note. |
+| `check_new_matches` | Pull the new 95+ matches discovered in the last N hours (default 48). Scans the top page only — see the tool's own note. |
 | `get_job` | Full detail for one match — score breakdown, ghost-listing signal, description. |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it natively. |
 
@@ -138,7 +138,7 @@ A key uses **your plan's limits — identical to the web app**; a free account m
 | Full match-feed depth (beyond the free cap) | capped + upgrade hint | ✅ full |
 | `get_negotiation_playbook` | ❌ 402 | ✅ |
 
-Your key hits the paywall in exactly the place your account does. Radar's *push* alerts (an email the moment a new 90%+ match appears) remain a subscription feature — `check_new_matches` is the manual, on-demand equivalent.
+Your key hits the paywall in exactly the place your account does. Radar's *push* alerts (an email the moment a new 95+ match appears) remain a subscription feature — `check_new_matches` is the manual, on-demand equivalent.
 
 ## Configuration
 

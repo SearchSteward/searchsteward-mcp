@@ -79,7 +79,7 @@ def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, A
         high_fit = int(data.get("strong_90_count") or 0)
     except (TypeError, ValueError):
         high_fit = 0
-    tier = f", {high_fit} of them scored 90%+" if high_fit > 0 else ""
+    tier = f", {high_fit} of them scored {_HIGH_FIT_SHOWN}+" if high_fit > 0 else ""
     return {
         "reason": "feed_depth",
         "feed_cap": shown,
@@ -97,6 +97,10 @@ def _feed_depth_upgrade(data: Dict[str, Any], page: int) -> Optional[Dict[str, A
     }
 
 
+def _raw_score(job: Dict[str, Any]) -> Any:
+    return job.get("score_v2", job.get("score"))
+
+
 def _row(job: Dict[str, Any]) -> Dict[str, Any]:
     """Compact a job/match record down to what fits a context window."""
     return {
@@ -106,7 +110,9 @@ def _row(job: Dict[str, Any]) -> Dict[str, Any]:
         "location": job.get("location"),
         "salary_low": job.get("salary_low"),
         "salary_high": job.get("salary_high"),
-        "score": job.get("score_v2", job.get("score")),
+        # The number the app shows (display units, the backend's `display_score`); raw V2 only
+        # from a backend that predates it. Never rank or filter on this one.
+        "score": job["display_score"] if job.get("display_score") is not None else _raw_score(job),
         "discovered": job.get("date_discovered") or job.get("date_added"),
     }
 
@@ -151,7 +157,8 @@ def search_matches(
     return result
 
 
-_HIGH_FIT_SCORE = 90
+_HIGH_FIT_SCORE = 90  # raw V2: the backend instant-alert line
+_HIGH_FIT_SHOWN = 95  # the same line in display units (display_score of raw 90)
 
 
 def _discovered_within(iso_str: Any, cutoff: datetime) -> bool:
@@ -170,14 +177,14 @@ def _discovered_within(iso_str: Any, cutoff: datetime) -> bool:
 
 @mcp.tool()
 def check_new_matches(hours: int = 48) -> Dict[str, Any]:
-    """Check for NEW high-fit matches discovered in the last N hours. Returns only roles scored 90%+
+    """Check for NEW high-fit matches discovered in the last N hours. Returns only roles scored 95+
     that were discovered within your time window (default 48h), sorted highest score first. Use this
     at the start of a session to catch recent strong opportunities without browsing the full feed.
     Do NOT use this to filter by salary/location — use search_matches with filters instead. Hours default
     48 (2 days); values below 1 are clamped to 1. If no high-fit roles are found in the window,
     returns an empty list with a message.
     NOTE: scans only the first page (top 25 score-ranked matches). Since results are ranked
-    highest-score-first, new 90%+ roles are near the top, but a role scored 90%+ that sits below
+    highest-score-first, new 95+ roles are near the top, but a role scored 95+ that sits below
     rank 25 will not be seen. For an exhaustive walk, page through search_matches."""
     try:
         data = _c().get_jobs({"page": 1, "page_size": _MAX_PAGE_SIZE})
@@ -190,22 +197,22 @@ def check_new_matches(hours: int = 48) -> Dict[str, Any]:
     fresh = []
     for j in jobs:
         try:
-            score = float(j.get("score_v2", j.get("score")) or 0)
+            score = float(_raw_score(j) or 0)
         except (TypeError, ValueError):
             continue
         discovered = j.get("date_discovered") or j.get("date_added")
         if score >= _HIGH_FIT_SCORE and _discovered_within(discovered, cutoff):
-            fresh.append(_row(j))
-    fresh.sort(key=lambda r: r.get("score") or 0, reverse=True)
+            fresh.append((score, _row(j)))
+    fresh = [r for _, r in sorted(fresh, key=lambda t: t[0], reverse=True)]  # rank on raw
     result: Dict[str, Any] = {"new_high_fit": fresh, "count": len(fresh), "window_hours": hours}
     if not fresh:
-        result["message"] = f"No new 90%+ matches in the last {hours}h."
+        result["message"] = f"No new {_HIGH_FIT_SHOWN}+ matches in the last {hours}h."
     else:
         # Conversion pointer: the pull tool is the manual version of the paid push.
         result["upgrade"] = {
             "reason": "high_fit_alert",
             "message": (
-                "Radar emails you the moment a new 90%+ match appears — "
+                f"Radar emails you the moment a new {_HIGH_FIT_SHOWN}+ match appears — "
                 "so you don't have to check manually."
             ),
         }
