@@ -94,6 +94,7 @@ def test_search_matches_compacts_rows():
     assert row == {
         "id": 1, "title": "Eng", "company": "Acme", "location": None,
         "salary_low": None, "salary_high": None, "score": 91, "discovered": "2026-07-20",
+        "band": None, "seen_on_site": None,
     }
 
 
@@ -327,13 +328,14 @@ def test_upgrade_cta_fires_for_capped_free_user(monkeypatch, _fake):
     assert "50" in up["message"]  # feed-cap framing, honest about the feed size
 
 
-def test_upgrade_cta_includes_high_fit_tier(monkeypatch, _fake):
+def test_upgrade_cta_has_no_score_percent_tier(monkeypatch, _fake):
+    """strong_90_count is score >= 90, not the Strong band; the CTA must not say "90%+"."""
     _capped_feed(monkeypatch, _fake, is_free=True, total_strong=150, shown=50, strong_90=12)
     out = _fn("search_matches")(query="x")
     msg = out["upgrade"]["message"]
-    assert "12" in msg and "95+" in msg
+    assert "%" not in msg and "12" not in msg
     assert "locked" in msg  # loss framing
-    assert out["upgrade"]["strong_90_count"] == 12
+    assert "strong_90_count" not in out["upgrade"]
 
 
 def test_upgrade_cta_omits_tier_when_zero(monkeypatch, _fake):
@@ -423,9 +425,11 @@ def test_negotiation_402_relays_upgrade_reason(monkeypatch, _fake):
 # --- check_new_matches (high-fit pull tool) ---------------------------------
 
 
-def _hf_job(score, hours_ago, jid=1):
+def _hf_job(score, hours_ago, jid=1, band=None):
     disc = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
-    return {"id": jid, "title": "Eng", "company": "Acme", "score_v2": score, "date_discovered": disc}
+    band = band or ("Strong Match" if score >= 85 else "Good Match")
+    return {"id": jid, "title": f"Eng {jid}", "company": "Acme", "score_v2": score,
+            "date_discovered": disc, "fit_band_v2": band}
 
 
 def test_check_new_matches_returns_recent_high_fit(monkeypatch, _fake):
@@ -445,8 +449,8 @@ def test_check_new_matches_excludes_old(monkeypatch, _fake):
 
 def test_check_new_matches_excludes_low_score(monkeypatch, _fake):
     monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(80, 2)]})
-    out = _fn("check_new_matches")()
-    assert out["count"] == 0
+    out = _fn("check_new_matches")(band="Strong")
+    assert out["count"] == 0 and "band='Good'" in out["message"]
 
 
 def test_check_new_matches_custom_window(monkeypatch, _fake):
@@ -537,7 +541,7 @@ def test_rows_print_the_display_score_and_rank_on_raw(monkeypatch, _fake):
     rows = _fn("search_matches")()["matches"]
     assert [r["score"] for r in rows] == [95, 100, 90]
     out = _fn("check_new_matches")()
-    assert [r["id"] for r in out["new_high_fit"]] == [2, 1]  # raw 80 (shown 90) is below the raw 90 line
+    assert [r["id"] for r in out["new_high_fit"]] == [2, 1, 3]  # bands select (#7); raw sorts (#11)
 
 
 def test_rows_fall_back_to_raw_without_display_score(monkeypatch, _fake):
@@ -552,8 +556,203 @@ def test_check_new_matches_breaks_display_ties_on_raw(monkeypatch, _fake):
     assert [r["id"] for r in _fn("check_new_matches")()["new_high_fit"]] == [2, 1]
 
 
-def test_filter_reads_final_score_first_like_the_backend(monkeypatch, _fake):
-    """B's latent split: display_score comes from final_score first; the 90 line must read the same field."""
-    job = dict(_hf_job(91, 2, 1), final_score=88, display_score=94)
-    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [job]})
-    assert _fn("check_new_matches")()["count"] == 0  # prints 94, so it is not a 95+ row
+def test_sort_reads_final_score_first_like_the_backend(monkeypatch, _fake):
+    """B's latent split: display_score comes from final_score first; the raw sort must read the same field."""
+    a = dict(_hf_job(91, 2, 1), final_score=88, display_score=94)
+    b = _hf_job(89, 2, 2)
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [a, b]})
+    assert [r["id"] for r in _fn("check_new_matches")()["new_high_fit"]] == [2, 1]
+
+
+# --- set up a search by chat (card mcp-chat-setup) ---------------------------
+
+class _SetupClient:
+    def __init__(self, post_exc=None, post_out=None, settings=None):
+        self.calls, self._exc, self._out, self._settings = [], post_exc, post_out, settings
+
+    def preferences_from_search(self, body):
+        self.calls.append(("post", body))
+        if self._exc:
+            raise self._exc
+        return self._out or {"applied": True, "feed_pending": True}
+
+    def get_user_settings(self):
+        self.calls.append(("get",))
+        if self._settings is None:
+            raise ApiError(403, "This API key cannot read personal data")
+        return self._settings
+
+
+def test_set_up_search_preview_writes_nothing(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Senior Data Analyst"], location="Denver, CO", salary_min=120000)
+    assert out["saved"] is False
+    assert out["criteria"] == {"title_includes": ["Senior Data Analyst"], "location": "Denver, CO",
+                               "radius_miles": 30, "salary_min": 120000}
+    assert out["summary"] == "Senior Data Analyst, within 30 miles of Denver, CO, plus remote, $120,000+"
+    assert fake.calls == []  # no read, no write: safe to call repeatedly
+
+
+def test_set_up_search_confirm_posts_the_previewed_criteria(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    preview = server.set_up_search(["Data Analyst"], work_type="hybrid")["criteria"]
+    out = server.set_up_search(["Data Analyst"], work_type="hybrid", confirm=True)
+    assert out["saved"] is True and out["feed_pending"] is True
+    assert fake.calls == [("post", preview)]
+
+
+def test_set_up_search_any_work_type_is_not_sent(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    server.set_up_search(["Data Analyst"], confirm=True)
+    assert "work_type" not in fake.calls[0][1]
+
+
+def test_set_up_search_existing_criteria_quotes_them_and_changes_nothing(monkeypatch):
+    fake = _SetupClient(post_exc=ApiError(409, {"error": "criteria_exists"}),
+                        settings={"title_preferences": {"positive_keywords": ["Analyst"]},
+                                  "compensation_location": {"user_location": "Austin, TX"}})
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Product Manager"], confirm=True)
+    assert out["error"] == "criteria_exists" and out["saved"] is False
+    assert out["current"] == {"titles": ["Analyst"], "location": "Austin, TX"}
+    assert [c[0] for c in fake.calls] == ["post", "get"]  # no PATCH, ever
+
+
+def test_set_up_search_existing_criteria_unreadable_key_still_refuses(monkeypatch):
+    fake = _SetupClient(post_exc=ApiError(409, {"error": "criteria_exists"}), settings=None)
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Product Manager"], confirm=True)
+    assert out["error"] == "criteria_exists" and out["current"] is None
+
+
+def test_set_up_search_identical_retry_reports_unchanged(monkeypatch):
+    fake = _SetupClient(post_out={"applied": False, "unchanged": True, "feed_pending": False})
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Data Analyst"], confirm=True)
+    assert out["saved"] is True and out["unchanged"] is True
+
+
+def test_set_up_search_needs_a_title(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    assert server.set_up_search(["  "], location="NYC", confirm=True)["error"] == "needs_anchor"
+    assert fake.calls == []
+
+
+# --- v0.5 catch-up: bands, seen-on-site, fold, thin feed, attributable CTAs ----
+
+def test_check_new_matches_goes_by_band_not_score(monkeypatch, _fake):
+    """Prod 10-24: half the Strong rows score < 90 and scores pass 100, so 90 is not 'strong'."""
+    jobs = [_hf_job(86, 2, 1, "Strong Match"), _hf_job(95, 2, 2, "Good Match")]
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": jobs})
+    out = _fn("check_new_matches")(band="Strong")
+    assert [r["id"] for r in out["new_high_fit"]] == [1]
+    assert out["new_high_fit"][0]["band"] == "Strong Match"
+
+
+def test_check_new_matches_good_band_includes_strong_and_good(monkeypatch, _fake):
+    jobs = [_hf_job(86, 2, 1, "Strong Match"), _hf_job(78, 2, 2, "Good Match"), _hf_job(60, 2, 3, "Weak Match")]
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": jobs})
+    out = _fn("check_new_matches")()  # Good is the default: a first call must not come back empty
+    assert sorted(r["id"] for r in out["new_high_fit"]) == [1, 2]
+    assert {r["band"] for r in out["new_high_fit"]} == {"Strong Match", "Good Match"}
+
+
+def test_check_new_matches_copy_has_no_percent(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(94, 2)]})
+    out = _fn("check_new_matches")()
+    assert "%" not in out["upgrade"]["message"]
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": []})
+    assert "%" not in _fn("check_new_matches")()["message"]
+
+
+def test_every_upgrade_cta_is_attributable(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(94, 2)]})
+    assert _fn("check_new_matches")()["upgrade"]["url"].endswith(
+        "/settings/billing?utm_source=mcp&utm_medium=check_new_matches")
+    _capped_feed(monkeypatch, _fake, is_free=True, total_strong=150, shown=50)
+    assert _fn("search_matches")(query="x")["upgrade"]["url"].endswith("utm_source=mcp&utm_medium=search_matches")
+
+    def boom(application_id):
+        raise ApiError(402, "Upgrade to Radar to continue.")
+    monkeypatch.setattr(_fake, "start_negotiation_playbook", boom)
+    assert _fn("get_negotiation_playbook")(application_id=3)["upgrade_url"].endswith(
+        "utm_source=mcp&utm_medium=negotiation")
+
+
+def test_seen_on_site_matches_the_app_wording():
+    now = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
+    at = lambda h: (now - timedelta(hours=h)).isoformat()
+    assert server._seen_on_site("Stripe", at(3), now) == "Seen on Stripe's site today"
+    assert server._seen_on_site("Stripe", at(30), now) == "Seen on Stripe's site yesterday"
+    assert server._seen_on_site("Stripe", at(48), now) is None      # past 48h says nothing
+    assert server._seen_on_site(None, at(1), now) == "Seen on the employer's site today"
+    assert server._seen_on_site("Stripe", "not a date", now) is None
+
+
+def test_search_matches_folds_same_role_at_several_locations(monkeypatch, _fake):
+    jobs = [{"id": 1, "title": "VP of Sales", "company": "Acme", "location": "Remote"},
+            {"id": 2, "title": "Data Analyst", "company": "Acme", "location": "NYC"},
+            {"id": 3, "title": "VP  of Sales", "company": "acme", "location": "New York"}]
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": jobs})
+    rows = _fn("search_matches")()["matches"]
+    assert [r["id"] for r in rows] == [1, 2]                      # served order kept
+    assert rows[0]["also_in"] == [{"id": 3, "location": "New York"}]  # nothing dropped
+    assert "also_in" not in rows[1]
+
+
+def test_why_is_my_feed_thin_relays_the_panel_diagnosis(monkeypatch, _fake):
+    status = {"first_feed_status": {"state": "ready", "feed_count": 12, "strong_count": 1,
+                                    "thin_constraint": {"constraint": "location", "label": "Within 25 miles", "excludes": 340},
+                                    "feed_health": {"user_id": 9}},
+              "thin_feed_threshold": 25, "thin_feed_strong_min": 5,
+              "preferences": {"confirmed": {"titles": ["x"]}}}
+    _fake.get_activation_status = lambda: status
+    out = _fn("why_is_my_feed_thin")()
+    assert out["thin_constraint"]["excludes"] == 340
+    assert out["feed_count"] == 12 and out["thin_threshold"] == 25
+    assert "preferences" not in out and "feed_health" not in out   # only the diagnosis
+
+
+def test_why_is_my_feed_thin_surfaces_errors(monkeypatch, _fake):
+    def boom():
+        raise ApiError(403, "This endpoint is not available to API keys")
+    _fake.get_activation_status = boom
+    out = _fn("why_is_my_feed_thin")()
+    assert out["status"] == 403
+    assert "'full' scope" in out.get("why", "")  # .get: a dropped `why` fails here, not on a KeyError
+
+
+
+def test_set_up_search_uses_a_named_radius_and_sends_it(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Nurse"], location="Austin, TX", radius_miles=15, work_type="onsite")
+    assert out["summary"] == "Nurse, within 15 miles of Austin, TX"
+    server.set_up_search(["Nurse"], location="Austin, TX", radius_miles=15, work_type="onsite", confirm=True)
+    assert fake.calls[0][1]["radius_miles"] == 15
+
+
+def test_set_up_search_sends_no_radius_without_a_location(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Data Analyst"], work_type="remote")
+    assert "radius_miles" not in out["criteria"] and out["summary"] == "Data Analyst, remote only"
+
+
+def test_set_up_search_hybrid_summary_says_hybrid_or_remote(monkeypatch):
+    monkeypatch.setattr(server, "_c", lambda: _SetupClient())
+    out = server.set_up_search(["Data Analyst"], location="Denver, CO", work_type="hybrid")
+    assert out["summary"] == "Data Analyst, within 30 miles of Denver, CO (hybrid or remote)"
+
+
+def test_set_up_search_clamps_a_radius_over_500_and_says_so(monkeypatch):
+    fake = _SetupClient()
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.set_up_search(["Data Analyst"], location="Denver, CO", radius_miles=2000)
+    assert out["criteria"]["radius_miles"] == 500 and "500 miles" in out.get("note", "")
+    server.set_up_search(["Data Analyst"], location="Denver, CO", radius_miles=2000, confirm=True)
+    assert fake.calls[0][1]["radius_miles"] == 500
