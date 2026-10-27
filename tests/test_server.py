@@ -341,7 +341,7 @@ def test_upgrade_cta_has_no_score_percent_tier(monkeypatch, _fake):
 def test_upgrade_cta_omits_tier_when_zero(monkeypatch, _fake):
     _capped_feed(monkeypatch, _fake, is_free=True, total_strong=150, shown=50, strong_90=0)
     out = _fn("search_matches")(query="x")
-    assert "90%+" not in out["upgrade"]["message"]
+    assert "95+" not in out["upgrade"]["message"]
 
 
 def test_upgrade_cta_survives_non_numeric_tier(monkeypatch, _fake):
@@ -350,7 +350,7 @@ def test_upgrade_cta_survives_non_numeric_tier(monkeypatch, _fake):
                 "matches_shown": 50, "strong_90_count": "bad"}
     monkeypatch.setattr(_fake, "get_jobs", fake_get_jobs)
     out = _fn("search_matches")(query="x")  # must not raise
-    assert "90%+" not in out["upgrade"]["message"]
+    assert "95+" not in out["upgrade"]["message"]
 
 
 def test_upgrade_cta_shows_plus_at_ceiling(monkeypatch, _fake):
@@ -531,6 +531,37 @@ def test_update_preferences_surfaces_a_422_as_an_error(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: _Boom())
     out = server.update_preferences("compensation_location", {"radius_kilometres": 50})
     assert "error" in out
+
+
+def test_rows_print_the_display_score_and_rank_on_raw(monkeypatch, _fake):
+    """Backend display_score is what the app shows (raw 80 -> 90); raw stays the filter and the sort."""
+    jobs = [dict(_hf_job(91, 2, 1), display_score=95), dict(_hf_job(99, 2, 2), display_score=100),
+            dict(_hf_job(80, 2, 3), display_score=90)]
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": jobs})
+    rows = _fn("search_matches")()["matches"]
+    assert [r["score"] for r in rows] == [95, 100, 90]
+    out = _fn("check_new_matches")()
+    assert [r["id"] for r in out["new_high_fit"]] == [2, 1, 3]  # bands select (#7); raw sorts (#11)
+
+
+def test_rows_fall_back_to_raw_without_display_score(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [_hf_job(80, 2)]})
+    assert _fn("search_matches")()["matches"][0]["score"] == 80
+
+
+def test_check_new_matches_breaks_display_ties_on_raw(monkeypatch, _fake):
+    """B's M3: raw 100 and 104 both print 100, so a sort on the printed score could put 100 first."""
+    jobs = [dict(_hf_job(100, 2, 1), display_score=100), dict(_hf_job(104, 2, 2), display_score=100)]
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": jobs})
+    assert [r["id"] for r in _fn("check_new_matches")()["new_high_fit"]] == [2, 1]
+
+
+def test_sort_reads_final_score_first_like_the_backend(monkeypatch, _fake):
+    """B's latent split: display_score comes from final_score first; the raw sort must read the same field."""
+    a = dict(_hf_job(91, 2, 1), final_score=88, display_score=94)
+    b = _hf_job(89, 2, 2)
+    monkeypatch.setattr(_fake, "get_jobs", lambda p: {"jobs": [a, b]})
+    assert [r["id"] for r in _fn("check_new_matches")()["new_high_fit"]] == [2, 1]
 
 
 # --- set up a search by chat (card mcp-chat-setup) ---------------------------

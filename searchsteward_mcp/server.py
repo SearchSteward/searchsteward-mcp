@@ -143,6 +143,11 @@ def _fold(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _raw_score(job: Dict[str, Any]) -> Any:
+    # The same field order the backend derives display_score from, so filter and print agree.
+    return next((job[k] for k in ("final_score", "score_v2", "score") if job.get(k) is not None), None)
+
+
 def _row(job: Dict[str, Any]) -> Dict[str, Any]:
     """Compact a job/match record down to what fits a context window."""
     return {
@@ -152,7 +157,9 @@ def _row(job: Dict[str, Any]) -> Dict[str, Any]:
         "location": job.get("location"),
         "salary_low": job.get("salary_low"),
         "salary_high": job.get("salary_high"),
-        "score": job.get("score_v2", job.get("score")),
+        # The number the app shows (display units, the backend's `display_score`); raw V2 only
+        # from a backend that predates it. Never rank or filter on this one.
+        "score": job["display_score"] if job.get("display_score") is not None else _raw_score(job),
         "discovered": job.get("date_discovered") or job.get("date_added"),
         "band": job.get("fit_band_v2"),
         "seen_on_site": _seen_on_site(job.get("company"), job.get("source_last_seen_at")),
@@ -237,17 +244,18 @@ def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Good")
         jobs = []
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, int(hours)))
     wanted = _BANDS.get(band, _BANDS["Good"])
-    fresh = [_row(j) for j in jobs
-             if j.get("fit_band_v2") in wanted
-             and _discovered_within(j.get("date_discovered") or j.get("date_added"), cutoff)]
+    picked = [j for j in jobs
+              if j.get("fit_band_v2") in wanted
+              and _discovered_within(j.get("date_discovered") or j.get("date_added"), cutoff)]
 
-    def _score(r: Dict[str, Any]) -> float:
+    def _score(j: Dict[str, Any]) -> float:
         try:
-            return float(r.get("score") or 0)
+            return float(_raw_score(j) or 0)
         except (TypeError, ValueError):
             return 0.0
 
-    fresh = _fold(sorted(fresh, key=_score, reverse=True))
+    # Rank on raw (main #11): the printed score is display units and never sorts.
+    fresh = _fold([_row(j) for j in sorted(picked, key=_score, reverse=True)])
     label = "Strong" if band == "Strong" else "Strong or Good"
     result: Dict[str, Any] = {"new_high_fit": fresh, "count": len(fresh), "window_hours": hours, "band": band}
     if not fresh:

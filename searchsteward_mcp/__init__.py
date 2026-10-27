@@ -2,5 +2,5 @@
 
 from .client import ApiError, ConfigError, SearchStewardClient
 
-__version__ = "0.3.3"
+__version__ = "0.4.1"
 __all__ = ["SearchStewardClient", "ApiError", "ConfigError"]
