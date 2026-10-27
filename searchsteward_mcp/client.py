@@ -111,7 +111,12 @@ class SearchStewardClient:
 
     def apply_track(self, job_id: int, note: Optional[str] = None) -> Any:
         body = {"note": note} if note else {}
-        return self._request("POST", f"/api/v1/applications/{job_id}/apply-track", json=body)
+        out = self._request("POST", f"/api/v1/applications/{job_id}/apply-track", json=body)
+        # The API's legacy path (id is already an applications.id) answers {"status": "success"} with no
+        # application_id; the id it updated is the one we sent, so the documented field is still true.
+        if isinstance(out, dict) and out.get("status") == "success" and "application_id" not in out:
+            out["application_id"] = job_id
+        return out
 
     def patch_application(self, application_id: int, body: Dict[str, Any]) -> Any:
         return self._request("PATCH", f"/api/v1/applications/{application_id}", json=body)
@@ -213,8 +218,9 @@ class SearchStewardClient:
     ) -> Any:
         # Wire names are the applications table's columns: the API stores the body as-is and drops
         # unknown keys, so "title"/"url"/"note"/"applied_date" 400'd ("role is required") or vanished.
-        body: Dict[str, Any] = {"company": company, "role": title}
-        for key, value in (("job_url", url), ("location", location), ("status", status),
+        # The tool records an application you SUBMITTED; without a status the API stores 'considering'.
+        body: Dict[str, Any] = {"company": company, "role": title, "status": status or "applied"}
+        for key, value in (("job_url", url), ("location", location),
                            ("date_applied", applied_date), ("notes", note)):
             if value is not None:
                 body[key] = value

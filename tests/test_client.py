@@ -311,3 +311,27 @@ def test_track_external_application_sends_the_api_column_names():
     assert seen["body"] == {"company": "Acme Corp", "role": "Senior Engineer", "job_url": "https://jobs.acme.com/1",
                             "location": "SF", "status": "applied", "date_applied": "2026-07-20", "notes": "via LinkedIn"}
     assert out["application_id"] == 7
+
+
+def test_track_external_application_defaults_to_applied():
+    """B's LOW (a): with no status the API stores 'considering', but the tool records a submitted application."""
+    import json
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "success", "id": 7})
+
+    _client(handler).track_external_application("Acme Corp", "Senior Engineer")
+    assert seen["body"] == {"company": "Acme Corp", "role": "Senior Engineer", "status": "applied"}
+
+
+def test_apply_track_legacy_reply_still_carries_application_id():
+    """B's LOW (b): the legacy apply-track path answers {"status": "success"} with no id."""
+    out = _client(lambda r: httpx.Response(200, json={"status": "success"})).apply_track(42)
+    assert out["application_id"] == 42
+
+
+def test_apply_track_keeps_the_api_application_id():
+    out = _client(lambda r: httpx.Response(200, json={"status": "success", "application_id": 9})).apply_track(42)
+    assert out["application_id"] == 9
