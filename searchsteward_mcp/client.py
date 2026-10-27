@@ -211,18 +211,17 @@ class SearchStewardClient:
         applied_date: Optional[str] = None,
         note: Optional[str] = None,
     ) -> Any:
-        body = {"company": company, "title": title}
-        if url is not None:
-            body["url"] = url
-        if location is not None:
-            body["location"] = location
-        if status is not None:
-            body["status"] = status
-        if applied_date is not None:
-            body["applied_date"] = applied_date
-        if note is not None:
-            body["note"] = note
-        return self._request("POST", "/api/v1/applications", json=body)
+        # Wire names are the applications table's columns: the API stores the body as-is and drops
+        # unknown keys, so "title"/"url"/"note"/"applied_date" 400'd ("role is required") or vanished.
+        body: Dict[str, Any] = {"company": company, "role": title}
+        for key, value in (("job_url", url), ("location", location), ("status", status),
+                           ("date_applied", applied_date), ("notes", note)):
+            if value is not None:
+                body[key] = value
+        out = self._request("POST", "/api/v1/applications", json=body)
+        if isinstance(out, dict) and "application_id" not in out and "id" in out:
+            out["application_id"] = out["id"]  # the API answers {"status": "success", "id": N}
+        return out
 
 
 def _extract_detail(resp: httpx.Response) -> str:
