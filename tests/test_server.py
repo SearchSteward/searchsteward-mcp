@@ -768,6 +768,8 @@ def test_practice_interview_prompt_renders_with_the_job_id():
     for tool in ("get_resume()", "list_questions()", "save_question", "list_applications()"):
         assert tool in text
     assert "ONE question at a time" in text
+    # Practising must never mark the job APPLIED (B's review of #8): offer save_match, not log_application.
+    assert "save_match(job_id=4242)" in text and "log_application" not in text
 
 
 def test_practice_interview_is_a_prompt_not_a_tool():

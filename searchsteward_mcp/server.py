@@ -729,7 +729,8 @@ def practice_interview(job_id: int) -> str:
    and the strongest story I told. Offer to save any question and my improved answer with
    save_question(question, answer, application_id) if this job is tracked as an application. To
    find application_id, call list_applications() and take the id of the row whose job_id is {job_id};
-   if there is none, offer log_application first."""
+   if there is none, offer save_match(job_id={job_id}) first: it tracks the job as saved, not
+   applied, and returns the application_id."""
 
 
 def _as_dict(data: Any, key: str) -> Dict[str, Any]:

@@ -76,7 +76,7 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 
 ## Tools
 
-19 tools in five groups.
+23 tools in six groups, plus one prompt.
 
 **Discover & analyze**
 | Tool | What it does |
