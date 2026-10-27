@@ -756,3 +756,24 @@ def test_set_up_search_clamps_a_radius_over_500_and_says_so(monkeypatch):
     assert out["criteria"]["radius_miles"] == 500 and "500 miles" in out.get("note", "")
     server.set_up_search(["Data Analyst"], location="Denver, CO", radius_miles=2000, confirm=True)
     assert fake.calls[0][1]["radius_miles"] == 500
+
+
+# --- practice_interview prompt (card interview-practice-agent, step 1) ----------
+
+def test_practice_interview_prompt_renders_with_the_job_id():
+    import asyncio
+    result = asyncio.run(server.mcp.get_prompt("practice_interview", {"job_id": "4242"}))
+    text = result.messages[0].content.text
+    assert "get_job(job_id=4242)" in text
+    for tool in ("get_resume()", "list_questions()", "save_question", "list_applications()"):
+        assert tool in text
+    assert "ONE question at a time" in text
+    # Practising must never mark the job APPLIED (B's review of #8): offer save_match, not log_application.
+    assert "save_match(job_id=4242)" in text and "log_application" not in text
+
+
+def test_practice_interview_is_a_prompt_not_a_tool():
+    import asyncio
+    prompts = {p.name for p in asyncio.run(server.mcp.list_prompts())}
+    tools = {t.name for t in asyncio.run(server.mcp.list_tools())}
+    assert "practice_interview" in prompts and "practice_interview" not in tools
