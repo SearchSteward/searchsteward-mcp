@@ -1,12 +1,25 @@
 [project]
 name = "searchsteward-mcp"
-version = "0.4.1"
-description = "MCP server for SearchSteward — search job matches, read score breakdowns, log applications, and pull negotiation prep from any MCP client."
+version = "0.5.0"
+description = "MCP server for SearchSteward: set up a job search by chat, search and triage your matches, track applications, and prep interviews and negotiations from Claude or any MCP client."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "SearchSteward" }]
 keywords = ["mcp", "job-search", "claude", "searchsteward"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business",
+]
 dependencies = [
     # UPPER BOUND IS LOAD-BEARING. server.py imports `mcp.server.fastmcp`, which
     # mcp 2.0.0 REMOVED (verified against a clean venv: mcp 2.0.0 ships mcp.server but
