@@ -571,6 +571,28 @@ def why_is_my_feed_thin() -> Dict[str, Any]:
     return out
 
 
+# The onboarding wizard's default commute radius (webapp onboarding/preferences/page.tsx).
+_DEFAULT_RADIUS_MILES = 30
+# from-search rejects radius_miles > 500 (422); clamp here so the user gets a sentence, not an error.
+_MAX_RADIUS_MILES = 500
+
+
+def _criteria_summary(c: Dict[str, Any]) -> str:
+    """One plain sentence of what will be saved, for the user to confirm."""
+    parts = [" / ".join(c["title_includes"]) if c.get("title_includes") else ", ".join(c.get("keywords") or [])]
+    loc, wt = c.get("location"), c.get("work_type")
+    if wt == "remote":
+        parts.append("remote only")
+    elif loc:
+        near = f"within {c['radius_miles']} miles of {loc}"
+        parts.append(near if wt in ("onsite", "hybrid") else f"{near}, plus remote")
+        if wt == "hybrid":
+            parts[-1] += " (hybrid or remote)"
+    if c.get("salary_min"):
+        parts.append(f"${c['salary_min']:,}+")
+    return ", ".join(p for p in parts if p)
+
+
 def _current_criteria() -> Optional[Dict[str, Any]]:
     """The user's saved titles + location, or None when unreadable (e.g. a read_no_pii key)."""
     try:
@@ -590,11 +612,14 @@ def set_up_search(
     work_type: Literal["any", "remote", "hybrid", "onsite"] = "any",
     keywords: Optional[List[str]] = None,
     seniority: Optional[List[Literal["Junior", "Mid-level", "Senior", "Staff+", "Executive"]]] = None,
+    radius_miles: Optional[int] = None,
     confirm: bool = False,
 ) -> Dict[str, Any]:
     """Set up a NEW user's job search from one sentence, e.g. "senior data analyst in Denver,
     open to remote, $120k+" -> titles=['Senior Data Analyst'], location='Denver, CO',
     salary_min=120000, work_type='any' ("open to remote" is not remote-only).
+    radius_miles is the commute radius around location; leave it unset unless the user names
+    one, and the wizard's default (30) is used and shown back in `summary`.
 
     Two steps, always:
       1. confirm=False (default): writes NOTHING. Returns the criteria exactly as they would be
@@ -606,10 +631,16 @@ def set_up_search(
     titles/location so you can ask "replace or adjust?", and changes go through
     update_preferences with the user's OK. work_type 'remote' means remote-only."""
     criteria: Dict[str, Any] = {"title_includes": [t.strip() for t in titles if t and t.strip()]}
+    note: Optional[str] = None
     if keywords:
         criteria["keywords"] = [k.strip() for k in keywords if k and k.strip()]
     if location and location.strip():
         criteria["location"] = location.strip()
+        criteria["radius_miles"] = int(radius_miles) if radius_miles and radius_miles > 0 else _DEFAULT_RADIUS_MILES
+        if criteria["radius_miles"] > _MAX_RADIUS_MILES:
+            criteria["radius_miles"] = _MAX_RADIUS_MILES
+            note = (f"The commute radius tops out at {_MAX_RADIUS_MILES} miles, so I've used that. "
+                    "For anywhere in the country, leave the location out instead.")
     if salary_min:
         criteria["salary_min"] = int(salary_min)
     if work_type != "any":
@@ -619,11 +650,15 @@ def set_up_search(
     if not criteria["title_includes"] and not criteria.get("keywords"):
         return {"error": "needs_anchor", "detail": "Give at least one job title (or keyword) to search for."}
     if not confirm:
-        return {
+        out = {
             "saved": False,
             "criteria": criteria,
+            "summary": _criteria_summary(criteria),
             "next": "Show these to the user. Call again with confirm=True only after they agree.",
         }
+        if note:
+            out["note"] = note
+        return out
     try:
         out = _c().preferences_from_search(criteria)
     except ApiError as exc:
