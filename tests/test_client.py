@@ -294,3 +294,20 @@ def test_track_external_application_minimal():
     assert "Acme Corp" in body
     assert "Senior Engineer" in body
     assert "url" not in body
+
+
+def test_track_external_application_sends_the_api_column_names():
+    """Live 10-27: the API keeps only applications columns and requires `role`; "title" 400'd."""
+    import json
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "success", "id": 7})
+
+    out = _client(handler).track_external_application(
+        "Acme Corp", "Senior Engineer", url="https://jobs.acme.com/1", location="SF", status="applied",
+        applied_date="2026-07-20", note="via LinkedIn")
+    assert seen["body"] == {"company": "Acme Corp", "role": "Senior Engineer", "job_url": "https://jobs.acme.com/1",
+                            "location": "SF", "status": "applied", "date_applied": "2026-07-20", "notes": "via LinkedIn"}
+    assert out["application_id"] == 7
