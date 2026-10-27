@@ -18,7 +18,7 @@ Then tell it what you're looking for, either way:
 
 ### 2. Make an API key
 
-In SearchSteward: **Settings → Billing & plan → Integrations → Connect to Claude** ([direct link](https://searchsteward.com/settings?tab=billing)).
+In SearchSteward: **Settings → the Billing & plan tab → the Integrations section → Connect to Claude** (or go straight to [searchsteward.com/settings?tab=billing](https://searchsteward.com/settings?tab=billing)). The separate *Integrations* tab does not hold this card.
 
 1. Type a key name (optional) and your **current password**, then click **Create Key**.
 2. Copy the `ss_pat_…` token. **It is shown once: "Save this token now — you won't see it again."** The card also shows ready-to-paste Claude Code and Claude Desktop setup with your key filled in.
@@ -124,7 +124,7 @@ Your key hits the paywall in exactly the place your account does: on a free key,
 
 **Tool returns a 401 / "Invalid or revoked API key"** — the key was revoked or mistyped. Mint a fresh key in Settings.
 
-**Tool returns a 402 / "entitlement_denied"** — that capability is Radar-only (e.g. the negotiation playbook, or feed depth beyond the free cap). Your key uses your plan's limits, the same as the web app.
+**Tool returns a 402 / "entitlement_denied"** — that capability is Radar-only (e.g. the negotiation playbook). Your key uses your plan's limits, the same as the web app.
 
 **Tool returns a 403 / "This endpoint is not available to API keys"** — expected: API keys can only reach the tools above, nothing else.
 
