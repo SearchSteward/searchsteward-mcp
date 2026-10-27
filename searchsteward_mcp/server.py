@@ -753,7 +753,7 @@ def track_external_application(
 ) -> Dict[str, Any]:
     """Record a job application you submitted OUTSIDE SearchSteward — LinkedIn, a recruiter, company careers page,
     or anywhere else. This job does NOT need to be in your SearchSteward feed. Required: company, title.
-    Optional: url, location, status (applied/interviewing/offer/rejected/accepted), applied_date (ISO string),
+    Optional: url, location, status (applied/interviewing/offer/rejected/accepted; default applied), applied_date (ISO string),
     note. Returns application_id so you can chain to update_application or get_application. This closes the loop:
     ALL your job applications live in one place, whether from SearchSteward or external."""
     try:
