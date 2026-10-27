@@ -82,7 +82,7 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 | Tool | What it does |
 |------|--------------|
 | `search_matches` | Search your job matches (score-ranked; each row carries a `score`). Page size capped at 25. |
-| `check_new_matches` | Pull the new 90%+ matches discovered in the last N hours (default 48). Scans the top page only — see the tool's own note. |
+| `check_new_matches` | Pull the new matches discovered in the last N hours (default 48), by the app's match band: Strong + Good (default) or Strong only; each row is labelled. Scans the top page only — see the tool's own note. |
 | `get_job` | Full detail for one match — score breakdown, ghost-listing signal, description. |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it natively. |
 
@@ -113,6 +113,8 @@ Start a **new** session (MCP servers load at session start) and ask, e.g.:
 **Tune your search**
 | Tool | What it does |
 |------|--------------|
+| `why_is_my_feed_thin` | The app's own thin-feed diagnosis: feed and Strong counts, and the one saved filter that narrows your feed most, with how many jobs it excludes. Read-only; needs a `full`-scope key (it includes your target titles). |
+| `set_up_search` | Set up a new account's search from one sentence ("senior data analyst in Denver, open to remote, $120k+"). Shows the criteria first and saves only when called again with `confirm=True` after you agree. Never overwrites existing criteria. |
 | `get_preferences` | Read the settings that decide which jobs reach your feed — location (ZIP, radius, policy), salary floor, target titles, excluded keywords, thresholds. |
 | `update_preferences` | Change those settings and re-rank the feed. ⚠ **Re-scores your whole feed — jobs can disappear as well as appear.** Read `get_preferences` first and send only the keys you're changing. |
 
@@ -138,12 +140,12 @@ A key uses **your plan's limits — identical to the web app**; a free account m
 | Search, read, résumé (`search_matches`, `get_job`, `get_resume`) | ✅ | ✅ |
 | Track & triage (`log_application`, `save_match`, `dismiss_match`, …) | ✅ | ✅ |
 | Question bank & match-quality review | ✅ | ✅ |
-| Read & change search preferences (`get_preferences`, `update_preferences`) | ✅ | ✅ |
+| Set up, read & change search preferences (`set_up_search`, `why_is_my_feed_thin`, `get_preferences`, `update_preferences`) | ✅ | ✅ |
 | `check_new_matches` (manual pull) | ✅ | ✅ |
 | Full match-feed depth (beyond the free cap) | capped + upgrade hint | ✅ full |
 | `get_negotiation_playbook` | ❌ 402 | ✅ |
 
-Your key hits the paywall in exactly the place your account does. Radar's *push* alerts (an email the moment a new 90%+ match appears) remain a subscription feature — `check_new_matches` is the manual, on-demand equivalent.
+Your key hits the paywall in exactly the place your account does. Radar's *push* alerts (an email the moment a new Strong Match appears) remain a subscription feature — `check_new_matches` is the manual, on-demand equivalent.
 
 ## Configuration
 
@@ -169,6 +171,8 @@ Your key hits the paywall in exactly the place your account does. Radar's *push*
 **Tool returns a 403 / "This endpoint is not available to API keys"** — expected: API keys can only reach the tools above, nothing else.
 
 **Tool returns a 403 / "This API key's scope does not permit…"** — your key is a `read_no_pii` key and the tool needs résumé/offer access or writes. Mint a `full` key (see [Key scopes](#key-scopes)) if you need it.
+
+**A new release isn't showing up** — `uvx` keeps using the copy it cached the first time and doesn't check for updates on its own. Run `uvx searchsteward-mcp@latest` once (or use `searchsteward-mcp@latest` as the command in your MCP config) to pick up the newest version.
 
 **Don't paste keys into a shell command line** — `-e` values land in your shell history. If you must, revoke and re-mint afterward.
 

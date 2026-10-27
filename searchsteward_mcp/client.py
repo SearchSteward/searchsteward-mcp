@@ -159,6 +159,15 @@ class SearchStewardClient:
         """Merged user settings (DB + YAML defaults), secrets masked server-side."""
         return self._request("GET", "/api/v1/user/settings")
 
+    def get_activation_status(self) -> Any:
+        """Feed status + the cached thin-feed diagnosis (the matches-page panel's source)."""
+        return self._request("GET", "/api/v1/activation/status")
+
+    def preferences_from_search(self, body: Dict[str, Any]) -> Any:
+        """Save a first search as the user's criteria. 409 when criteria already exist
+        (never overwrites); an identical retry of the payload that set them is a 200 no-op."""
+        return self._request("POST", "/api/v1/user/preferences/from-search", json=body)
+
     def patch_user_settings(self, category: str, updates: Dict[str, Any]) -> Any:
         """Partial update of ONE settings category.
 
