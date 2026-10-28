@@ -101,7 +101,7 @@ A short example (a new account, abridged):
 
 > **You:** Set up my SearchSteward search: senior data analyst in Denver, hybrid is fine, $120k+.
 >
-> **Claude:** *(calls `set_up_search`, preview)* Here's what I'd save: **Senior Data Analyst, within 30 miles of Denver, CO (hybrid or remote), $120,000+.** Save it?
+> **Claude:** *(calls `set_up_search`, preview)* Here's what I'd save: **Senior Data Analyst, within 30 miles of Denver, CO (hybrid or remote), $120,000 pay floor saved (lower-paid jobs still show).** Save it?
 >
 > **You:** Yes.
 >

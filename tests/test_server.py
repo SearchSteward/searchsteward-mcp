@@ -94,7 +94,7 @@ def test_search_matches_compacts_rows():
     assert row == {
         "id": 1, "title": "Eng", "company": "Acme", "location": None,
         "salary_low": None, "salary_high": None, "score": 91, "discovered": "2026-07-20",
-        "band": None, "seen_on_site": None,
+        "band": None, "remote": None, "seen_on_site": None,
     }
 
 
@@ -590,7 +590,7 @@ def test_set_up_search_preview_writes_nothing(monkeypatch):
     assert out["saved"] is False
     assert out["criteria"] == {"title_includes": ["Senior Data Analyst"], "location": "Denver, CO",
                                "radius_miles": 30, "salary_min": 120000}
-    assert out["summary"] == "Senior Data Analyst, within 30 miles of Denver, CO, plus remote, $120,000+"
+    assert out["summary"] == "Senior Data Analyst, within 30 miles of Denver, CO, plus remote, $120,000 pay floor saved (lower-paid jobs still show)"
     assert fake.calls == []  # no read, no write: safe to call repeatedly
 
 
