@@ -40,7 +40,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Then open a **new** terminal so `uvx` is on your PATH, and check it installs (pip works too if you prefer, with Python 3.10 or newer):
+Then open a **new** terminal so `uvx` is on your PATH, and check it installs. It starts and then waits silently for an MCP client, which is normal: press Ctrl+C to stop. (pip works too if you prefer, with Python 3.10 or newer.)
 
 ```bash
 # uvx (recommended): runs the server without a manual install
@@ -50,7 +50,7 @@ uvx searchsteward-mcp@latest
 pip install searchsteward-mcp
 ```
 
-You don't need to start it yourself. Your MCP client starts it (step 4). The commands above are only a check that it installs; press Ctrl+C to stop.
+You don't need to start it yourself. Your MCP client starts it (step 4). The commands above are only a check that it installs; press Ctrl+C to stop. The client configs below use the plain `searchsteward-mcp`, which reuses the copy `uvx` cached here; `@latest` only matters when you want a newer release (see [Troubleshooting](#troubleshooting)).
 
 ### 4. Connect it to Claude
 
@@ -83,7 +83,7 @@ Add:
 }
 ```
 
-If you installed with pip instead, use `"command": "searchsteward-mcp"` and `"args": []` (if Claude Desktop can't find it, use the full path from `where searchsteward-mcp` on Windows or `which searchsteward-mcp` on macOS). Then **quit Claude Desktop completely and reopen it**.
+If you installed with pip instead, use `"command": "searchsteward-mcp"` and `"args": []` (if Claude Desktop can't find it, use the full path from `where.exe searchsteward-mcp` on Windows (in PowerShell, plain `where` is a different command and prints nothing) or `which searchsteward-mcp` on macOS). Then **quit Claude Desktop completely and reopen it**.
 
 The key sits in that config file, so treat the file like a password.
 
