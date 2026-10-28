@@ -613,9 +613,17 @@ _MIN_SKILLS = 3
 
 
 def _profile(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Résumé status and saved-skill count, plus one line when the profile itself caps the scores.
-    Skills = weights_jd.body_positive terms that are not just a target title. None if neither reads."""
-    resume = (status.get("resume") or {}).get("status")
+    """Résumé presence and saved-skill count, plus one line when the profile itself caps the scores.
+    Skills = weights_jd.body_positive terms that are not just a target title. None if neither reads.
+    Résumé presence comes from the résumé itself (GET /resume/profile): the status's
+    activation.resume_profile_id is set only by the activation wizard, so a résumé uploaded later in
+    Settings would still read "missing" there. That status is the fallback when the read fails."""
+    try:
+        r = _c().get_resume() or {}
+        resume = "present" if str(r.get("text") or "").strip() else "missing"
+    except Exception:  # noqa: BLE001
+        resume = {"imported": "present", "missing": "missing", "skipped": "missing"}.get(
+            (status.get("resume") or {}).get("status"))
     try:
         s = _c().get_user_settings() or {}
     except Exception:  # noqa: BLE001
@@ -628,7 +636,7 @@ def _profile(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if resume is None and skills is None:
         return None
     out: Dict[str, Any] = {"resume": resume, "skills_saved": skills}
-    if resume != "imported" and skills is not None and skills < _MIN_SKILLS:
+    if resume == "missing" and skills is not None and skills < _MIN_SKILLS:
         # update_preferences cannot write weights_jd, so both remedies point at the app.
         out["line"] = ("Scores stay low because only a job title is saved: no résumé and fewer than 3 skills. "
                        "Add your résumé or 3-5 skills in the app's Settings to lift them.")

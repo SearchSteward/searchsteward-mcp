@@ -6,8 +6,14 @@ from searchsteward_mcp.client import ApiError
 
 
 class _Client:
-    def __init__(self, jobs=None, ctx=None, status=None, settings=None):
+    def __init__(self, jobs=None, ctx=None, status=None, settings=None, resume_text=""):
         self._jobs, self._ctx, self._status, self._settings = jobs, ctx, status, settings
+        self._resume_text = resume_text  # None: the résumé read fails
+
+    def get_resume(self):
+        if self._resume_text is None:
+            raise ApiError(500, "boom")
+        return {"id": 1 if self._resume_text else None, "name": None, "text": self._resume_text}
 
     def get_jobs(self, params):
         return {"jobs": self._jobs or []}
@@ -110,9 +116,26 @@ def test_three_skills_no_line(monkeypatch):
     assert p["skills_saved"] == 3 and "line" not in p
 
 
-def test_imported_resume_no_line(monkeypatch):
-    _use(monkeypatch, status={**_THIN, "resume": {"status": "imported"}}, settings=_TITLE_ONLY)
+def test_resume_present_no_line(monkeypatch):
+    _use(monkeypatch, status={**_THIN, "resume": {"status": "imported"}}, settings=_TITLE_ONLY,
+         resume_text="Senior analyst, SQL, Tableau")
+    p = _profile()
+    assert p["resume"] == "present" and "line" not in p
+
+
+def test_settings_upload_counts_although_the_wizard_flag_says_missing(monkeypatch):
+    # activation.resume_profile_id is set only by the wizard; a later Settings upload leaves it unset.
+    _use(monkeypatch, status={**_THIN, "resume": {"status": "missing"}}, settings=_TITLE_ONLY,
+         resume_text="Senior analyst, SQL, Tableau")
     assert "line" not in _profile()
+
+
+def test_resume_read_failure_falls_back_to_the_status(monkeypatch):
+    _use(monkeypatch, status={**_THIN, "resume": {"status": "imported"}}, settings=_TITLE_ONLY, resume_text=None)
+    p = _profile()
+    assert p["resume"] == "present" and "line" not in p
+    _use(monkeypatch, status={**_THIN, "resume": {"status": "skipped"}}, settings=_TITLE_ONLY, resume_text=None)
+    assert "line" in _profile()
 
 
 def test_unreadable_settings_make_no_claim(monkeypatch):
