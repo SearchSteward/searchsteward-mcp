@@ -12,11 +12,36 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
+import importlib.metadata
+import json
+
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 
 from .client import DEFAULT_BASE, ApiError, ConfigError, SearchStewardClient
 
-mcp = FastMCP("searchsteward")
+# Auth failures are hard failures: the client should flag them (isError), not read them as data.
+# 402/404/409 stay normal results because they carry next steps (upgrade URL, use update_preferences).
+_AUTH_ERROR_STATUSES = (401, 403)
+
+
+class _SearchStewardMCP(FastMCP):
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+        result = await super().call_tool(name, arguments)
+        structured = result[1] if isinstance(result, tuple) else result
+        body = structured.get("result", structured) if isinstance(structured, dict) else None
+        if isinstance(body, dict) and body.get("error") is True and body.get("status") in _AUTH_ERROR_STATUSES:
+            # The low-level server turns a raised error into isError=True with this text: the same JSON the model saw before.
+            raise ToolError(json.dumps(body, indent=2))
+        return result
+
+
+mcp = _SearchStewardMCP("searchsteward")
+try:
+    # FastMCP doesn't pass a version, so initialize reported the mcp SDK's (1.30.0) instead of ours.
+    mcp._mcp_server.version = importlib.metadata.version("searchsteward-mcp")
+except importlib.metadata.PackageNotFoundError:  # pragma: no cover - running from an uninstalled checkout
+    pass
 
 # One client per process; created lazily so `--help`/import doesn't require the key.
 _client: Optional[SearchStewardClient] = None
