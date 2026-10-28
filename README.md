@@ -28,10 +28,22 @@ Keys made on the card have `full` scope. See [Key scopes](#key-scopes) for a rea
 
 ### 3. Install
 
-You need **Python 3.10 or newer**. Pick one:
+**First install [uv](https://docs.astral.sh/uv/getting-started/installation/)** (it provides `uvx`, and fetches a suitable Python for you). One line:
 
 ```bash
-# uvx (recommended): runs the server without a manual install; get uv at https://docs.astral.sh/uv/
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Then open a **new** terminal so `uvx` is on your PATH, and check it installs (pip works too if you prefer, with Python 3.10 or newer):
+
+```bash
+# uvx (recommended): runs the server without a manual install
 uvx searchsteward-mcp@latest
 
 # or pip
@@ -133,6 +145,14 @@ Your key hits the paywall in exactly the place your account does: on a free key,
 **Tool returns a 409 / `criteria_exists`**: `set_up_search` only sets up a **new** account and never overwrites. Change an existing search with `update_preferences`, or in Settings.
 
 **"Maximum 3 active API keys per user"**: revoke an old key on the Connect to Claude card, then create a new one.
+
+**`uvx: command not found`** (or `'uvx' is not recognized`): uv isn't installed, or the terminal was opened before you installed it. Install uv ([step 3](#3-install)) and open a new terminal.
+
+**`spawn uvx ENOENT` in the Claude Desktop logs**: Claude Desktop doesn't see the PATH your terminal does, so it can't find `uvx`. Put the full path in `"command"`:
+- macOS: run `which uvx` in Terminal (usually `/Users/<you>/.local/bin/uvx`) and use that, e.g. `"command": "/Users/<you>/.local/bin/uvx"`;
+- Windows: run `where.exe uvx` in PowerShell (usually `C:\Users\<you>\.local\bin\uvx.exe`) and use it with doubled backslashes, e.g. `"command": "C:\\Users\\<you>\\.local\\bin\\uvx.exe"`.
+
+Then quit and reopen Claude Desktop completely.
 
 **The server doesn't show up in Claude**:
 - quit and reopen Claude Desktop completely (or start a new `claude` session);
