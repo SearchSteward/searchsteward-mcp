@@ -62,6 +62,22 @@ def test_summary_does_not_promise_a_hard_floor():
     assert "$120,000+" not in s
 
 
+class _SaveClient:
+    def __init__(self, out):
+        self._out = out
+
+    def preferences_from_search(self, body):
+        return self._out
+
+
+def test_saved_response_repeats_the_floor_copy(monkeypatch):
+    for out in ({"applied": True, "feed_pending": True}, {"applied": False, "unchanged": True}):
+        monkeypatch.setattr(server, "_c", lambda o=out: _SaveClient(o))
+        res = server.set_up_search(["Data Analyst"], location="Colorado Springs, CO", salary_min=137913, confirm=True)
+        assert res["saved"] is True
+        assert res.get("summary", "").endswith("$137,913 pay floor saved (lower-paid jobs still show)")
+
+
 _THIN = {"first_feed_status": {"state": "ready", "feed_count": 22, "strong_count": 0},
          "thin_feed_threshold": 25, "thin_feed_strong_min": 5}
 _TITLE_ONLY = {"title_preferences": {"positive_keywords": ["Senior Data Analyst"]},

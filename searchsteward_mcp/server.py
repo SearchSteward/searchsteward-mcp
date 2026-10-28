@@ -738,9 +738,11 @@ def set_up_search(
         return _err(exc)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+    # The saved answer repeats the summary so what was saved reads the same as what was previewed.
     if out.get("unchanged"):
-        return {"saved": True, "unchanged": True, "criteria": criteria}
-    return {"saved": True, "criteria": criteria, "feed_pending": bool(out.get("feed_pending")),
+        return {"saved": True, "unchanged": True, "criteria": criteria, "summary": _criteria_summary(criteria)}
+    return {"saved": True, "criteria": criteria, "summary": _criteria_summary(criteria),
+            "feed_pending": bool(out.get("feed_pending")),
             "next": "Their first matches are being scored; check back with search_matches in a few minutes."}
 
 
