@@ -65,3 +65,21 @@ def test_success_is_not_error(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: _Fake())
     _, res = _run("search_matches", {})
     assert res.isError is False
+
+
+def test_missing_key_is_iserror_with_same_message(monkeypatch):
+    # Support's QA P0 (10-29): with no key set the call came back isError=false. The real path: no cached
+    # client and no env key, so _c() raises ConfigError inside the tool.
+    monkeypatch.setattr(server, "_client", None)
+    monkeypatch.delenv("SEARCHSTEWARD_API_KEY", raising=False)
+    _, res = _run("search_matches", {})
+    assert res.isError is True
+    body = json.loads(res.content[0].text)
+    assert body["error"] is True and body["detail"] == "SEARCHSTEWARD_API_KEY is required."
+
+
+def test_generic_error_stays_a_normal_result(monkeypatch):
+    # Only auth and local-setup failures are hard errors; anything else is still read as data.
+    monkeypatch.setattr(server, "_c", lambda: _Fake(TimeoutError("slow")))
+    _, res = _run("search_matches", {})
+    assert res.isError is False

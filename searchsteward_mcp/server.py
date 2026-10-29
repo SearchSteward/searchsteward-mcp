@@ -30,7 +30,9 @@ class _SearchStewardMCP(FastMCP):
         result = await super().call_tool(name, arguments)
         structured = result[1] if isinstance(result, tuple) else result
         body = structured.get("result", structured) if isinstance(structured, dict) else None
-        if isinstance(body, dict) and body.get("error") is True and body.get("status") in _AUTH_ERROR_STATUSES:
+        # A missing/invalid local setup (no key, a non-https base) is as hard a failure as a 401.
+        if isinstance(body, dict) and body.get("error") is True and (
+                body.get("status") in _AUTH_ERROR_STATUSES or body.get("kind") == "config"):
             # The low-level server turns a raised error into isError=True with this text: the same JSON the model saw before.
             raise ToolError(json.dumps(body, indent=2))
         return result
@@ -76,7 +78,7 @@ def _err(exc: Exception) -> Dict[str, Any]:
     if isinstance(exc, ApiError):
         return {"error": True, "status": exc.status_code, "detail": exc.detail}
     if isinstance(exc, ConfigError):
-        return {"error": True, "detail": str(exc)}
+        return {"error": True, "kind": "config", "detail": str(exc)}
     return {"error": True, "detail": f"{type(exc).__name__}: {exc}"}
 
 
