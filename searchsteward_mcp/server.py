@@ -1,4 +1,4 @@
-"""SearchSteward MCP server — nineteen tools over the SearchSteward REST API.
+"""SearchSteward MCP server — twenty-three tools over the SearchSteward REST API.
 
 Run: `uvx searchsteward-mcp` (stdio). Requires SEARCHSTEWARD_API_KEY; optional
 SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
@@ -187,6 +187,9 @@ def _row(job: Dict[str, Any]) -> Dict[str, Any]:
         "score": job["display_score"] if job.get("display_score") is not None else _raw_score(job),
         "discovered": job.get("date_discovered") or job.get("date_added"),
         "band": job.get("fit_band_v2"),
+        # Remote jobs skip the radius by design; without this a remote row read "Chapel Hill, NC"
+        # in a 30-mile Denver feed (demo 10-28).
+        "remote": bool(job["is_remote"]) if job.get("is_remote") is not None else None,
         "seen_on_site": _seen_on_site(job.get("company"), job.get("source_last_seen_at")),
     }
 
@@ -315,6 +318,11 @@ def get_job(job_id: int) -> Dict[str, Any]:
     if isinstance(desc, str) and len(desc) > _DESC_LIMIT:
         data["description"] = desc[:_DESC_LIMIT] + "\n…[truncated]"
         data["description_truncated"] = True
+    # Print the number the lists print (display units); final_score/score_v2 stay raw. A backend
+    # without display_score keeps today's payload (demo 10-28: the list said 58, get_job said 48).
+    if data.get("display_score") is not None:
+        data["score_raw"] = data.get("score")
+        data["score"] = data["display_score"]
     return data
 
 
@@ -593,6 +601,45 @@ def why_is_my_feed_thin() -> Dict[str, Any]:
     guidance = status.get("feed_guidance")
     if guidance:
         out["guidance"] = guidance
+    profile = _profile(status)
+    if profile:
+        out["profile"] = profile
+    return out
+
+
+# With no résumé and fewer saved skills than this, every score is title-only (demo 10-28: one
+# title, no résumé, 22 of 22 Weak with anchor=0).
+_MIN_SKILLS = 3
+
+
+def _profile(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Résumé presence and saved-skill count, plus one line when the profile itself caps the scores.
+    Skills = weights_jd.body_positive terms that are not just a target title. None if neither reads.
+    Résumé presence comes from the résumé itself (GET /resume/profile): the status's
+    activation.resume_profile_id is set only by the activation wizard, so a résumé uploaded later in
+    Settings would still read "missing" there. That status is the fallback when the read fails."""
+    try:
+        r = _c().get_resume() or {}
+        resume = "present" if str(r.get("text") or "").strip() else "missing"
+    except Exception:  # noqa: BLE001
+        resume = {"imported": "present", "missing": "missing", "skipped": "missing"}.get(
+            (status.get("resume") or {}).get("status"))
+    try:
+        s = _c().get_user_settings() or {}
+    except Exception:  # noqa: BLE001
+        s = None
+    skills = None
+    if isinstance(s, dict):
+        titles = {str(t).strip().lower() for t in (s.get("title_preferences") or {}).get("positive_keywords") or []}
+        body = (s.get("weights_jd") or {}).get("body_positive") or {}
+        skills = sum(1 for t in body if str(t).strip().lower() not in titles)
+    if resume is None and skills is None:
+        return None
+    out: Dict[str, Any] = {"resume": resume, "skills_saved": skills}
+    if resume == "missing" and skills is not None and skills < _MIN_SKILLS:
+        # update_preferences cannot write weights_jd, so both remedies point at the app.
+        out["line"] = ("Scores stay low because only a job title is saved: no résumé and fewer than 3 skills. "
+                       "Add your résumé or 3-5 skills in the app's Settings to lift them.")
     return out
 
 
@@ -614,7 +661,8 @@ def _criteria_summary(c: Dict[str, Any]) -> str:
         if wt == "hybrid":
             parts[-1] += " (hybrid or remote)"
     if c.get("salary_min"):
-        parts.append(f"${c['salary_min']:,}+")
+        # The floor hides nothing (enforce_salary stays off, Eric 10-26), so "$120,000+" overpromised.
+        parts.append(f"${c['salary_min']:,} pay floor saved (lower-paid jobs still show)")
     return ", ".join(p for p in parts if p)
 
 
@@ -698,9 +746,11 @@ def set_up_search(
         return _err(exc)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+    # The saved answer repeats the summary so what was saved reads the same as what was previewed.
     if out.get("unchanged"):
-        return {"saved": True, "unchanged": True, "criteria": criteria}
-    return {"saved": True, "criteria": criteria, "feed_pending": bool(out.get("feed_pending")),
+        return {"saved": True, "unchanged": True, "criteria": criteria, "summary": _criteria_summary(criteria)}
+    return {"saved": True, "criteria": criteria, "summary": _criteria_summary(criteria),
+            "feed_pending": bool(out.get("feed_pending")),
             "next": "Their first matches are being scored; check back with search_matches in a few minutes."}
 
 
