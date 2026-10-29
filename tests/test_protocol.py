@@ -65,3 +65,39 @@ def test_success_is_not_error(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: _Fake())
     _, res = _run("search_matches", {})
     assert res.isError is False
+
+
+class _UpdateFake:
+    def __init__(self, status_exc=None, note_exc=None):
+        self.status_exc, self.note_exc = status_exc, note_exc
+
+    def patch_application(self, aid, body):
+        if self.status_exc:
+            raise self.status_exc
+        return {"status": "success"}
+
+    def add_note(self, aid, note):
+        if self.note_exc:
+            raise self.note_exc
+        return {"id": 1}
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_update_application_auth_error_in_a_leg_is_iserror(monkeypatch, status):
+    # QA item 9: the 403/401 sat inside {"note_error": {...}} and came back with isError false.
+    monkeypatch.setattr(server, "_c", lambda: _UpdateFake(note_exc=ApiError(status, "read-only key")))
+    _, res = _run("update_application", {"application_id": 3, "note": "hi"})
+    assert res.isError is True
+    assert json.loads(res.content[0].text)["note_error"]["status"] == status
+
+
+def test_update_application_status_leg_auth_error_is_iserror(monkeypatch):
+    monkeypatch.setattr(server, "_c", lambda: _UpdateFake(status_exc=ApiError(403, "read-only key")))
+    _, res = _run("update_application", {"application_id": 3, "status": "offer"})
+    assert res.isError is True
+
+
+def test_update_application_non_auth_leg_error_stays_a_result(monkeypatch):
+    monkeypatch.setattr(server, "_c", lambda: _UpdateFake(note_exc=ApiError(500, "note store down")))
+    _, res = _run("update_application", {"application_id": 3, "status": "offer", "note": "hi"})
+    assert res.isError is False
