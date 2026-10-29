@@ -54,7 +54,7 @@ class _FakeClient:
         return {"restored": True}
 
     def list_questions(self, application_id=None):
-        return {"questions": [{"id": 1, "question": "Tell us about yourself"}]}
+        return {"questions": [{"id": 1, "question": "Tell us about yourself", "application_id": 5}]}
 
     def save_question(self, question, answer=None, application_id=None, category=None):
         return {"id": 7, "saved": True}
@@ -777,3 +777,34 @@ def test_practice_interview_is_a_prompt_not_a_tool():
     prompts = {p.name for p in asyncio.run(server.mcp.list_prompts())}
     tools = {t.name for t in asyncio.run(server.mcp.list_tools())}
     assert "practice_interview" in prompts and "practice_interview" not in tools
+
+
+def test_list_applications_asks_for_saved_rows_only_when_unfiltered(monkeypatch, _fake):
+    seen = []
+    monkeypatch.setattr(_fake, "get_applications", lambda params: seen.append(params) or {"items": []})
+    _fn("list_applications")()
+    _fn("list_applications")(status="applied")
+    assert seen[0]["include_saved"] == "true" and seen[1]["include_saved"] is None
+    assert seen[1]["status"] == "applied"
+
+
+@pytest.mark.parametrize("job_id", [-1, 0])
+def test_get_job_rejects_a_non_positive_id_without_calling_the_api(monkeypatch, _fake, job_id):
+    monkeypatch.setattr(_fake, "get_job_context", lambda i: pytest.fail("must not call the API"))
+    out = _fn("get_job")(job_id=job_id)
+    assert out["error"] is True and out["status"] == 404
+
+
+def test_list_questions_for_an_application_drops_unlinked_questions(monkeypatch, _fake):
+    rows = [{"id": 1, "application_id": 3}, {"id": 2, "application_id": None}, {"id": 3, "application_id": 4}]
+    monkeypatch.setattr(_fake, "list_questions", lambda application_id=None: rows)
+    assert [q["id"] for q in _fn("list_questions")(application_id=3)["questions"]] == [1]
+    assert [q["id"] for q in _fn("list_questions")()["questions"]] == [1, 2, 3]
+
+
+def test_save_question_defaults_the_category_to_general(monkeypatch, _fake):
+    seen = []
+    monkeypatch.setattr(_fake, "save_question", lambda q, **kw: seen.append(kw) or {"id": 1}, raising=False)
+    _fn("save_question")("Why us?")
+    _fn("save_question")("Why us?", category="technical")
+    assert [k["category"] for k in seen] == ["general", "technical"]
