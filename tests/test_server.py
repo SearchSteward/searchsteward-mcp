@@ -590,7 +590,7 @@ def test_set_up_search_preview_writes_nothing(monkeypatch):
     assert out["saved"] is False
     assert out["criteria"] == {"title_includes": ["Senior Data Analyst"], "location": "Denver, CO",
                                "radius_miles": 30, "salary_min": 120000}
-    assert out["summary"] == "Senior Data Analyst, within 30 miles of Denver, CO, plus remote, $120,000 pay floor saved (lower-paid jobs still show)"
+    assert out["summary"] == "Senior Data Analyst, within 30 miles of Denver, CO, plus remote, $120,000 pay floor: jobs whose pay tops out below it are hidden"
     assert fake.calls == []  # no read, no write: safe to call repeatedly
 
 

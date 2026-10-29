@@ -61,10 +61,10 @@ def test_get_job_on_an_older_backend_is_unchanged(monkeypatch):
     assert out["score"] == 48.0 and "score_raw" not in out
 
 
-def test_summary_does_not_promise_a_hard_floor():
+def test_summary_says_the_floor_hides_lower_paid_jobs():
     s = server._criteria_summary({"title_includes": ["Senior Data Analyst"], "location": "Denver, CO",
                                   "radius_miles": 30, "salary_min": 120000})
-    assert s.endswith("$120,000 pay floor saved (lower-paid jobs still show)")
+    assert s.endswith("$120,000 pay floor: jobs whose pay tops out below it are hidden")
     assert "$120,000+" not in s
 
 
@@ -81,7 +81,7 @@ def test_saved_response_repeats_the_floor_copy(monkeypatch):
         monkeypatch.setattr(server, "_c", lambda o=out: _SaveClient(o))
         res = server.set_up_search(["Data Analyst"], location="Colorado Springs, CO", salary_min=137913, confirm=True)
         assert res["saved"] is True
-        assert res.get("summary", "").endswith("$137,913 pay floor saved (lower-paid jobs still show)")
+        assert res.get("summary", "").endswith("$137,913 pay floor: jobs whose pay tops out below it are hidden")
 
 
 _THIN = {"first_feed_status": {"state": "ready", "feed_count": 22, "strong_count": 0},
