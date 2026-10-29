@@ -21,19 +21,19 @@ from mcp.server.fastmcp.exceptions import ToolError
 
 from .client import DEFAULT_BASE, ApiError, ConfigError, SearchStewardClient
 
-# Auth failures are hard failures: the client should flag them (isError), not read them as data.
-# 402/404/409 stay normal results because they carry next steps (upgrade URL, use update_preferences).
-_AUTH_ERROR_STATUSES = (401, 403)
+# Every error-shaped result is a hard failure: the client should flag it (isError), not read it as data. The JSON text is unchanged, so the
+# next steps a 402 (upgrade URL), 404 or 409 carries are still in what the model reads. Error-shaped = a dict with a truthy "error":
+# _err(exc)'s {"error": True, "status", "detail"} and the string codes ({"error": "needs_anchor"} etc.).
 
 
-def _is_auth_error(value: Any) -> bool:
-    return isinstance(value, dict) and value.get("error") is True and value.get("status") in _AUTH_ERROR_STATUSES
+def _is_error_result(value: Any) -> bool:
+    return isinstance(value, dict) and bool(value.get("error"))
 
 
-def _has_auth_error(body: Any) -> bool:
-    """An auth failure at the top level, or inside a per-leg result (update_application's status_error / note_error).
-    A rejected key fails every leg, so one is enough."""
-    return _is_auth_error(body) or (isinstance(body, dict) and any(_is_auth_error(v) for v in body.values()))
+def _has_error(body: Any) -> bool:
+    """An error at the top level, or inside a per-leg result (update_application's status_error / note_error). A leg that failed
+    after another landed is still an error: the text keeps `updated` and `partial`, so the model sees the write that DID land."""
+    return _is_error_result(body) or (isinstance(body, dict) and any(_is_error_result(v) for v in body.values()))
 
 
 class _SearchStewardMCP(FastMCP):
@@ -41,7 +41,7 @@ class _SearchStewardMCP(FastMCP):
         result = await super().call_tool(name, arguments)
         structured = result[1] if isinstance(result, tuple) else result
         body = structured.get("result", structured) if isinstance(structured, dict) else None
-        if _has_auth_error(body):
+        if _has_error(body):
             # The low-level server turns a raised error into isError=True with this text: the same JSON the model saw before.
             raise ToolError(json.dumps(body, indent=2))
         return result
@@ -408,6 +408,11 @@ def update_application(
     # see the write that DID land instead of assuming a clean rollback.
     if ("status_error" in result) != ("note_error" in result) and len(result) > 1:
         result["partial"] = True
+        # Say what LANDED, in words, so a retry repeats only the failed leg (a repeated status write double-applies).
+        saved = [k for k in ("updated", "note") if k in result]
+        result["saved"] = saved
+        result["hint"] = (f"Already saved: {', '.join(saved)}. Do NOT repeat the saved part; retry only the failed one "
+                          f"({'status_error' if 'status_error' in result else 'note_error'}).")
     return result
 
 
