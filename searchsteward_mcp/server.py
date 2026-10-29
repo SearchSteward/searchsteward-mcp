@@ -99,15 +99,15 @@ def _err(exc: Exception) -> Dict[str, Any]:
 
 # The API names its fields after the database; the model only knows the tool's arguments. A 422 that says min_compensation_usd or bucket sends it
 # hunting for arguments it does not have.
-_API_TO_TOOL_ARGUMENT = (("min_compensation_usd", "salary_min"), ("bucket", "status"))
+_API_TO_TOOL_ARGUMENT = {"min_compensation_usd": "salary_min", "bucket": "status"}
+# Whole words only: "bucketed", "buckets" or "min_compensation_usd_extra" are not the field and must not be rewritten.
+_API_FIELD_RE = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(_API_TO_TOOL_ARGUMENT) + r")(?![A-Za-z0-9_])")
 
 
 def _tool_argument_names(out: Dict[str, Any]) -> Dict[str, Any]:
     detail = out.get("detail")
     if isinstance(detail, str):
-        for api_name, tool_name in _API_TO_TOOL_ARGUMENT:
-            detail = detail.replace(api_name, tool_name)
-        out["detail"] = detail
+        out["detail"] = _API_FIELD_RE.sub(lambda m: _API_TO_TOOL_ARGUMENT[m.group(1)], detail)
     return out
 
 
@@ -119,7 +119,7 @@ def _with_review_summary(data: Any) -> Any:
     scored = sum(1 for c in cands if isinstance(c, dict) and c.get("evaluated"))
     summary: Dict[str, Any] = {"scored": scored, "unscored": len(cands) - scored}
     if cands and scored == 0:
-        summary["note"] = ("None of these were scored for you yet (your feed may still be building, or they sit outside your filters). "
+        summary["note"] = ("None of these had a score on file for you (your feed may still be building, or they sit outside your filters). "
                            "A verdict is still saved, but its score_at_label will be null.")
     return {**data, "summary": summary}
 
@@ -939,9 +939,9 @@ def review_candidates(
     include_labelled (default false — hides ones you have already given a verdict on, so
     repeated calls walk you through the backlog). Pair with submit_match_verdict.
 
-    This audits the ranker for someone who already has scored matches. On a new account almost
-    nothing has been scored yet, so the page is all `evaluated: false`: the result's `summary`
-    says how many were scored; use search_matches first."""
+    This audits the ranker for someone who already has scored matches. On a new account little or
+    nothing may have been scored yet, so the page can be mostly `evaluated: false`: the result's
+    `summary` says how many were scored. If it says none, use search_matches first."""
     try:
         data = _c().get_review_candidates({
             "query": query, "limit": limit, "include_labelled": include_labelled,
@@ -974,17 +974,19 @@ def submit_match_verdict(
     you are auditing match quality rather than managing your search.
 
     Your verdict is stored with the score the job had at the time, so the label stays
-    meaningful after the scorer changes (score_at_label is null when the job was never scored for
-    you; the result says so with scored: false). Re-labelling the same job replaces your previous
+    meaningful after the scorer changes (score_at_label is null when no score was on file for
+    you for that job; the result says so with scored: false). Re-labelling the same job replaces your previous
     verdict rather than stacking another one."""
     try:
         out = _c().submit_match_verdict(job_id, verdict, note=note)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
     if isinstance(out, dict) and "score_at_label" in out:
-        out = {**out, "scored": out["score_at_label"] is not None}
-        if not out["scored"]:
-            out["note"] = "This job was never scored for you; the verdict is saved without a score."
+        scored = out["score_at_label"] is not None
+        out = {**out} if "scored" in out else {**out, "scored": scored}   # never overwrite a field the backend already sends
+        if not scored:
+            msg = "This job had no score on file for you; the verdict is saved without a score."
+            out["note"] = f"{out['note']} {msg}" if out.get("note") else msg
     return out
 
 

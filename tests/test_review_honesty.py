@@ -64,7 +64,7 @@ def test_an_all_unscored_page_says_so(monkeypatch):
     b = _body(res)
     assert res.isError is False
     assert b["summary"]["scored"] == 0 and b["summary"]["unscored"] == 3
-    assert "none of these were scored for you" in b["summary"]["note"].lower() and "score_at_label will be null" in b["summary"]["note"]
+    assert "none of these had a score on file for you" in b["summary"]["note"].lower() and "score_at_label will be null" in b["summary"]["note"]
 
 
 def test_a_mixed_page_has_counts_and_no_note(monkeypatch):
@@ -94,7 +94,7 @@ def test_a_review_error_is_untouched(monkeypatch):
 def test_a_verdict_on_an_unscored_job_says_the_score_is_missing(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: _Review(verdict={"ok": True, "job_id": 7, "verdict": "should_surface", "score_at_label": None, "fit_band_at_label": None}))
     b = _body(_call("submit_match_verdict", {"job_id": 7, "verdict": "should_surface"}))
-    assert b["scored"] is False and "never scored for you" in b["note"] and "saved without a score" in b["note"]
+    assert b["scored"] is False and "no score on file for you" in b["note"] and "saved without a score" in b["note"]
     assert b["ok"] is True and b["job_id"] == 7 and b["verdict"] == "should_surface" and b["score_at_label"] is None   # backend fields verbatim
 
 
@@ -113,8 +113,9 @@ def test_the_tool_descriptions_state_the_limit():
     async def go(s):
         return {t.name: t.description for t in (await s.list_tools()).tools}
     d = {k: " ".join(v.split()) for k, v in anyio.run(_with_session, go).items()}   # docstring line wraps are not part of the text
-    assert "already has scored matches" in d["review_candidates"] and "use search_matches first" in d["review_candidates"]
-    assert "null when the job was never scored for you" in d["submit_match_verdict"]
+    assert "already has scored matches" in d["review_candidates"] and "If it says none, use search_matches first" in d["review_candidates"]
+    assert "almost nothing" not in d["review_candidates"]   # Codex: an unproven claim about new accounts
+    assert "null when no score was on file for you for that job" in d["submit_match_verdict"]
 
 
 class _Jobs:
@@ -145,3 +146,65 @@ def test_a_backend_payload_without_a_candidates_list_is_returned_unchanged(monke
             return {"unexpected": 1}
     monkeypatch.setattr(server, "_c", lambda: _Odd())
     assert _body(_call("review_candidates")) == {"unexpected": 1}
+
+
+# ---- Codex review of 8ecbdb3 ----
+
+def test_scored_is_the_evaluated_flag_not_the_score(monkeypatch):
+    cands = [_cand(1, True, None), _cand(2, True, None), _cand(3, False, 99.0)]   # evaluated with no score counts as scored; a stray score on an unevaluated row does not
+    monkeypatch.setattr(server, "_c", lambda: _Review(cands))
+    assert _body(_call("review_candidates"))["summary"] == {"scored": 2, "unscored": 1}
+
+
+def test_every_candidate_field_passes_through_untouched(monkeypatch):
+    cands = [{**_cand(5, False), "extra": {"k": [1, 2]}}, _cand(2, True, 80.0)]
+    monkeypatch.setattr(server, "_c", lambda: _Review(cands))
+    assert _body(_call("review_candidates"))["candidates"] == cands
+
+
+def test_verdict_fields_pass_through_verbatim_with_extras(monkeypatch):
+    back = {"ok": True, "job_id": 7, "verdict": "unsure", "score_at_label": 55.9, "fit_band_at_label": "Good Match", "future_field": {"a": 1}}
+    monkeypatch.setattr(server, "_c", lambda: _Review(verdict=back))
+    assert _body(_call("submit_match_verdict", {"job_id": 7, "verdict": "unsure"})) == {**back, "scored": True}
+
+
+@pytest.mark.parametrize("score", [0, 0.0])
+def test_a_zero_score_adds_only_the_scored_flag(monkeypatch, score):
+    back = {"ok": True, "job_id": 7, "verdict": "unsure", "score_at_label": score, "fit_band_at_label": "Filtered Out"}
+    monkeypatch.setattr(server, "_c", lambda: _Review(verdict=back))
+    assert _body(_call("submit_match_verdict", {"job_id": 7, "verdict": "unsure"})) == {**back, "scored": True}
+
+
+def test_a_payload_without_score_at_label_is_left_alone(monkeypatch):
+    back = {"ok": True, "job_id": 7, "verdict": "unsure"}
+    monkeypatch.setattr(server, "_c", lambda: _Review(verdict=back))
+    assert _body(_call("submit_match_verdict", {"job_id": 7, "verdict": "unsure"})) == back
+
+
+def test_a_backend_scored_field_and_note_are_not_overwritten(monkeypatch):
+    back = {"ok": True, "job_id": 7, "verdict": "unsure", "score_at_label": None, "fit_band_at_label": None, "scored": "backend-says", "note": "from backend"}
+    monkeypatch.setattr(server, "_c", lambda: _Review(verdict=back))
+    b = _body(_call("submit_match_verdict", {"job_id": 7, "verdict": "unsure"}))
+    assert b["scored"] == "backend-says" and b["note"].startswith("from backend ") and "no score on file for you" in b["note"]
+
+
+@pytest.mark.parametrize("detail", ["bucketed rows", "3 buckets full", "min_compensation_usd_extra is odd", "subbucket", "x_bucket_y"])
+def test_longer_words_and_identifiers_are_not_rewritten(monkeypatch, detail):
+    monkeypatch.setattr(server, "_c", lambda: _Jobs(ApiError(422, detail)))
+    assert _body(_call("search_matches"))["detail"] == detail
+
+
+@pytest.mark.parametrize("raw,want", [("bucket=dismissed", "status=dismissed"), ("(min_compensation_usd)", "(salary_min)"),
+                                      ("min_compensation_usd, bucket", "salary_min, status"), ("'bucket'", "'status'"), ("bucket.", "status.")])
+def test_standalone_field_names_are_rewritten_through_punctuation(monkeypatch, raw, want):
+    monkeypatch.setattr(server, "_c", lambda: _Jobs(ApiError(422, raw)))
+    assert _body(_call("search_matches"))["detail"] == want
+
+
+def test_the_translation_runs_only_in_search_matches(monkeypatch):
+    class _Upd:
+        def patch_application(self, aid, body):
+            raise ApiError(422, "bucket min_compensation_usd")
+    monkeypatch.setattr(server, "_c", lambda: _Upd())
+    res = _call("update_application", {"application_id": 3, "status": "offer"})
+    assert res.isError is True and _body(res)["status_error"]["detail"] == "bucket min_compensation_usd"
