@@ -65,14 +65,20 @@ def _args(schema):
 
 
 class _Raises:
-    """A client whose every method fails with the same ApiError."""
+    """A client whose every method fails with the same ApiError; remembers that it was reached."""
     def __init__(self, status):
         self.status = status
+        self.calls = []
 
     def __getattr__(self, name):
         def boom(*a, **k):
+            self.calls.append(name)
             raise ApiError(self.status, f"simulated {self.status}")
         return boom
+
+
+# Required-only arguments return early for these three (a validation error, an empty update, a preview): give them what reaches the API.
+_REACH_API = {"update_application": {"note": "x"}, "update_preferences": {"updates": {"salary_min": 1}}, "set_up_search": {"confirm": True}}
 
 
 class _Fake:
@@ -131,12 +137,16 @@ def test_update_application_partial_write_is_iserror_but_keeps_what_landed(monke
 
 @pytest.mark.parametrize("status", [404, 422, 429, 500])
 def test_every_tool_that_calls_the_api_reports_http_errors_as_iserror(monkeypatch, status):
-    monkeypatch.setattr(server, "_c", lambda: _Raises(status))
+    fake = _Raises(status)
+    monkeypatch.setattr(server, "_c", lambda: fake)
     tools = _tools()
     assert len(tools) >= 20
-    bad = []
+    bad, not_reached = [], []
     for t in tools:
-        res = _call(t.name, _args(t.inputSchema))
+        fake.calls.clear()
+        res = _call(t.name, {**_args(t.inputSchema), **_REACH_API.get(t.name, {})})
+        if not fake.calls:
+            not_reached.append(t.name)
         text = res.content[0].text if res.content else ""
         try:
             body = json.loads(text)
@@ -146,6 +156,7 @@ def test_every_tool_that_calls_the_api_reports_http_errors_as_iserror(monkeypatc
         if error_shaped and res.isError is not True:
             bad.append(t.name)
     assert bad == [], f"error-shaped result with isError false: {bad}"
+    assert not_reached == [], f"the sweep never reached the API for: {not_reached}"   # a sweep that skips a tool proves nothing about it
 
 
 @pytest.mark.parametrize("args,code", [({"titles": []}, "needs_anchor")])
@@ -160,5 +171,63 @@ def test_a_successful_tool_result_is_not_an_error(monkeypatch):
     class _Ok:
         def get_jobs(self, params):
             return {"jobs": []}
+    monkeypatch.setattr(server, "_c", lambda: _Ok())
+    assert _call("search_matches", {}).isError is False
+
+
+# ---- review points (Codex + Owner, 10-29) ----
+
+class _Playbook402:
+    def start_negotiation_playbook(self, application_id):
+        raise ApiError(402, "monthly quota used")
+
+
+def test_a_402_keeps_its_upgrade_url_in_the_error_text_exactly(monkeypatch):
+    # A 402 is a sales prompt as much as a failure: the billing link must be in what the model reads.
+    monkeypatch.setattr(server, "_c", lambda: _Playbook402())
+    res = _call("get_negotiation_playbook", {"application_id": 3})
+    url = server._upgrade_url("negotiation")
+    assert res.isError is True
+    assert json.loads(res.content[0].text) == {"error": True, "status": 402, "detail": "monthly quota used", "upgrade_url": url}
+    assert "/settings/billing?utm_source=mcp&utm_medium=negotiation" in res.content[0].text
+
+
+def test_partial_write_status_saved_note_failed_says_what_landed(monkeypatch):
+    monkeypatch.setattr(server, "_c", lambda: _UpdateFake(note_exc=ApiError(500, "note store down")))
+    body = json.loads(_call("update_application", {"application_id": 3, "status": "offer", "note": "hi"}).content[0].text)
+    assert body["saved"] == ["updated"] and body["partial"] is True
+    assert "Do NOT repeat the saved part" in body["hint"] and "note_error" in body["hint"] and "Already saved: updated" in body["hint"]
+
+
+def test_partial_write_note_saved_status_failed_says_what_landed(monkeypatch):
+    monkeypatch.setattr(server, "_c", lambda: _UpdateFake(status_exc=ApiError(422, "bad status")))
+    res = _call("update_application", {"application_id": 3, "status": "offer", "note": "hi"})
+    body = json.loads(res.content[0].text)
+    assert res.isError is True and body["saved"] == ["note"] and body["note"] == {"id": 1} and body["status_error"]["status"] == 422
+    assert "Already saved: note" in body["hint"] and "status_error" in body["hint"]
+
+
+def test_both_legs_failing_is_not_called_partial(monkeypatch):
+    monkeypatch.setattr(server, "_c", lambda: _UpdateFake(status_exc=ApiError(500, "a"), note_exc=ApiError(500, "b")))
+    body = json.loads(_call("update_application", {"application_id": 3, "status": "offer", "note": "hi"}).content[0].text)
+    assert "partial" not in body and "saved" not in body and "hint" not in body
+
+
+@pytest.mark.parametrize("value", [[], [1, 2], [{"error": True}], "text", 0, None, {"a": {"b": {"error": True}}}, {"rows": [{"error": True}]},
+                                   {"a": {"error": False}}, {"error": None}, {"error": ""}, {"error": 0}])
+def test_only_a_truthy_error_at_depth_zero_or_one_flips(value):
+    assert server._has_error(value) is False
+
+
+@pytest.mark.parametrize("value", [{"error": True}, {"error": "needs_anchor"}, {"updated": {}, "note_error": {"error": True, "status": 404}}])
+def test_a_truthy_error_at_depth_zero_or_one_flips(value):
+    assert server._has_error(value) is True
+
+
+@pytest.mark.parametrize("payload", [{"jobs": [], "meta": {"deep": {"error": True}}}, {"jobs": [{"error": True, "title": "x"}]}])
+def test_a_success_with_error_text_deeper_than_one_level_is_not_an_error(monkeypatch, payload):
+    class _Ok:
+        def get_jobs(self, params):
+            return payload
     monkeypatch.setattr(server, "_c", lambda: _Ok())
     assert _call("search_matches", {}).isError is False

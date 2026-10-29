@@ -408,6 +408,11 @@ def update_application(
     # see the write that DID land instead of assuming a clean rollback.
     if ("status_error" in result) != ("note_error" in result) and len(result) > 1:
         result["partial"] = True
+        # Say what LANDED, in words, so a retry repeats only the failed leg (a repeated status write double-applies).
+        saved = [k for k in ("updated", "note") if k in result]
+        result["saved"] = saved
+        result["hint"] = (f"Already saved: {', '.join(saved)}. Do NOT repeat the saved part; retry only the failed one "
+                          f"({'status_error' if 'status_error' in result else 'note_error'}).")
     return result
 
 
