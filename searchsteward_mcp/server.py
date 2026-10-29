@@ -661,9 +661,14 @@ def _criteria_summary(c: Dict[str, Any]) -> str:
         if wt == "hybrid":
             parts[-1] += " (hybrid or remote)"
     if c.get("salary_min"):
-        # The floor hides nothing (enforce_salary stays off, Eric 10-26), so "$120,000+" overpromised.
-        parts.append(f"${c['salary_min']:,} pay floor saved (lower-paid jobs still show)")
+        # A floor named here binds on the posting's stated top of range (salary-bind B, Eric 10-29);
+        # jobs that list no pay still show.
+        parts.append(f"${c['salary_min']:,} pay floor: jobs whose pay tops out below it are hidden")
     return ", ".join(p for p in parts if p)
+
+
+# Same ceiling the API enforces on from-search (and the app's entry nudge); observed typos are an extra zero.
+_SALARY_FLOOR_SANITY_CEILING = 400_000
 
 
 def _current_criteria() -> Optional[Dict[str, Any]]:
@@ -687,12 +692,16 @@ def set_up_search(
     seniority: Optional[List[Literal["Junior", "Mid-level", "Senior", "Staff+", "Executive"]]] = None,
     radius_miles: Optional[int] = None,
     confirm: bool = False,
+    salary_confirmed: bool = False,
 ) -> Dict[str, Any]:
     """Set up a NEW user's job search from one sentence, e.g. "senior data analyst in Denver,
     open to remote, $120k+" -> titles=['Senior Data Analyst'], location='Denver, CO',
     salary_min=120000, work_type='any' ("open to remote" is not remote-only).
     radius_miles is the commute radius around location; leave it unset unless the user names
     one, and the wizard's default (30) is used and shown back in `summary`.
+    salary_min HIDES jobs whose stated pay tops out below it (jobs with no listed pay still show).
+    A floor above $400,000 is usually an extra zero: confirm the figure with the user, and pass
+    salary_confirmed=True only if they really mean it.
 
     Two steps, always:
       1. confirm=False (default): writes NOTHING. Returns the criteria exactly as they would be
@@ -716,6 +725,11 @@ def set_up_search(
                     "For anywhere in the country, leave the location out instead.")
     if salary_min:
         criteria["salary_min"] = int(salary_min)
+        if criteria["salary_min"] > _SALARY_FLOOR_SANITY_CEILING and not salary_confirmed:
+            note = ((note + " ") if note else "") + (
+                f"A ${criteria['salary_min']:,} pay floor would hide every lower-paid job. Did the user mean "
+                f"${round(criteria['salary_min'] / 10):,}? Check the figure with them; if they mean it, call again "
+                "with salary_confirmed=True.")
     if work_type != "any":
         criteria["work_type"] = work_type
     if seniority:
@@ -733,7 +747,8 @@ def set_up_search(
             out["note"] = note
         return out
     try:
-        out = _c().preferences_from_search(criteria)
+        # salary_confirmed is the user's answer to the floor check, not a criterion: sent, never shown as saved.
+        out = _c().preferences_from_search({**criteria, "salary_confirmed": True} if salary_confirmed else criteria)
     except ApiError as exc:
         if exc.status_code == 409:
             return {
