@@ -1,6 +1,6 @@
 [project]
 name = "searchsteward-mcp"
-version = "0.5.4"
+version = "0.5.5"
 description = "MCP server for SearchSteward: set up a job search by chat, search and triage your matches, track applications, and prep interviews and negotiations from Claude or any MCP client."
 readme = "README.md"
 requires-python = ">=3.10"
