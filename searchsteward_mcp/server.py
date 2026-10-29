@@ -97,6 +97,33 @@ def _err(exc: Exception) -> Dict[str, Any]:
     return {"error": True, "detail": f"{type(exc).__name__}: {exc}"}
 
 
+# The API names its fields after the database; the model only knows the tool's arguments. A 422 that says min_compensation_usd or bucket sends it
+# hunting for arguments it does not have.
+_API_TO_TOOL_ARGUMENT = (("min_compensation_usd", "salary_min"), ("bucket", "status"))
+
+
+def _tool_argument_names(out: Dict[str, Any]) -> Dict[str, Any]:
+    detail = out.get("detail")
+    if isinstance(detail, str):
+        for api_name, tool_name in _API_TO_TOOL_ARGUMENT:
+            detail = detail.replace(api_name, tool_name)
+        out["detail"] = detail
+    return out
+
+
+def _with_review_summary(data: Any) -> Any:
+    """Count scored vs unscored candidates; say so in words when none of them was scored. The list itself is not touched."""
+    cands = data.get("candidates") if isinstance(data, dict) else None
+    if not isinstance(cands, list):
+        return data
+    scored = sum(1 for c in cands if isinstance(c, dict) and c.get("evaluated"))
+    summary: Dict[str, Any] = {"scored": scored, "unscored": len(cands) - scored}
+    if cands and scored == 0:
+        summary["note"] = ("None of these were scored for you yet (your feed may still be building, or they sit outside your filters). "
+                           "A verdict is still saved, but its score_at_label will be null.")
+    return {**data, "summary": summary}
+
+
 def _upgrade_url(medium: str) -> str:
     """Billing page, tagged so a checkout reached from an MCP CTA can be attributed to the tool."""
     base = (os.environ.get("SEARCHSTEWARD_API_BASE") or DEFAULT_BASE).rstrip("/")
@@ -240,7 +267,7 @@ def search_matches(
             "page_size": _MAX_PAGE_SIZE,
         })
     except Exception as exc:  # noqa: BLE001 — surface every failure to the model
-        return _err(exc)
+        return _tool_argument_names(_err(exc))
     jobs = data.get("jobs", data) if isinstance(data, dict) else data
     rows = _fold([_row(j) for j in jobs]) if isinstance(jobs, list) else []
     result: Dict[str, Any] = {"matches": rows, "page": page, "count": len(rows)}
@@ -910,13 +937,18 @@ def review_candidates(
 
     Parameters: query (substring of job title or company), limit (max 50, default 25),
     include_labelled (default false — hides ones you have already given a verdict on, so
-    repeated calls walk you through the backlog). Pair with submit_match_verdict."""
+    repeated calls walk you through the backlog). Pair with submit_match_verdict.
+
+    This audits the ranker for someone who already has scored matches. On a new account almost
+    nothing has been scored yet, so the page is all `evaluated: false`: the result's `summary`
+    says how many were scored; use search_matches first."""
     try:
-        return _c().get_review_candidates({
+        data = _c().get_review_candidates({
             "query": query, "limit": limit, "include_labelled": include_labelled,
         })
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+    return _with_review_summary(data)
 
 
 @mcp.tool()
@@ -942,12 +974,18 @@ def submit_match_verdict(
     you are auditing match quality rather than managing your search.
 
     Your verdict is stored with the score the job had at the time, so the label stays
-    meaningful after the scorer changes. Re-labelling the same job replaces your previous
+    meaningful after the scorer changes (score_at_label is null when the job was never scored for
+    you; the result says so with scored: false). Re-labelling the same job replaces your previous
     verdict rather than stacking another one."""
     try:
-        return _c().submit_match_verdict(job_id, verdict, note=note)
+        out = _c().submit_match_verdict(job_id, verdict, note=note)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+    if isinstance(out, dict) and "score_at_label" in out:
+        out = {**out, "scored": out["score_at_label"] is not None}
+        if not out["scored"]:
+            out["note"] = "This job was never scored for you; the verdict is saved without a score."
+    return out
 
 
 @mcp.tool()
