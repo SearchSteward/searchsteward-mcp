@@ -54,11 +54,12 @@ def test_auth_error_is_iserror_with_same_message(monkeypatch, status):
     assert body == {"error": True, "status": status, "detail": "Invalid or revoked API key"}
 
 
-def test_paywall_402_stays_a_normal_result(monkeypatch):
-    # 402/409/404 carry next steps (upgrade URL, use update_preferences): the model should read them as data.
+def test_paywall_402_is_iserror_and_keeps_its_text(monkeypatch):
+    # 0.5.4: reversed from "402 stays a normal result". The next steps (upgrade URL) live in the JSON text, which is unchanged.
     monkeypatch.setattr(server, "_c", lambda: _Fake(ApiError(402, "Radar required")))
     _, res = _run("search_matches", {})
-    assert res.isError is False
+    assert res.isError is True
+    assert json.loads(res.content[0].text) == {"error": True, "status": 402, "detail": "Radar required"}
 
 
 def test_success_is_not_error(monkeypatch):
@@ -97,7 +98,10 @@ def test_update_application_status_leg_auth_error_is_iserror(monkeypatch):
     assert res.isError is True
 
 
-def test_update_application_non_auth_leg_error_stays_a_result(monkeypatch):
+def test_update_application_non_auth_leg_error_is_iserror_and_keeps_the_landed_write(monkeypatch):
+    # 0.5.4: reversed from "stays a result". The text still carries updated + partial, so the model sees what landed.
     monkeypatch.setattr(server, "_c", lambda: _UpdateFake(note_exc=ApiError(500, "note store down")))
     _, res = _run("update_application", {"application_id": 3, "status": "offer", "note": "hi"})
-    assert res.isError is False
+    assert res.isError is True
+    body = json.loads(res.content[0].text)
+    assert body["partial"] is True and body["updated"] == {"status": "success"} and body["note_error"]["status"] == 500
