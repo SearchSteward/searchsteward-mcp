@@ -673,6 +673,19 @@ def update_preferences(
 _MAX_SKILLS = 15
 
 
+def _skills_map(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """The user's saved skills as {term: weight}. GET /api/v1/user/settings returns weights_jd as ONE flat {term: weight} map (the
+    server merges the stored rows); a nested {"body_positive": {...}} is read too. Reading only the nested shape saw no skills at all,
+    which made add mode overwrite them."""
+    wj = (settings or {}).get("weights_jd") or {}
+    if not isinstance(wj, dict):
+        return {}
+    nested = wj.get("body_positive")
+    if isinstance(nested, dict):
+        return dict(nested)
+    return {k: v for k, v in wj.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+
+
 def _skill_key(term: Any) -> str:
     """The scorer's term key (scoring_v2._norm_keyword_key): lower-case, -_/ read as spaces, runs of spaces collapsed."""
     return re.sub(r"\s+", " ", re.sub(r"[-_/]+", " ", str(term).lower().strip())).strip()
@@ -704,7 +717,7 @@ def set_skills(skills: List[str], mode: Literal["add", "replace"] = "add") -> Di
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
     titles = {_skill_key(t) for t in (s.get("title_preferences") or {}).get("positive_keywords") or []}
-    current = dict((s.get("weights_jd") or {}).get("body_positive") or {})
+    current = dict(_skills_map(s))
     wanted: Dict[str, int] = {}
     dropped_titles: List[str] = []
     dropped_cap: List[str] = []
@@ -739,7 +752,7 @@ def set_skills(skills: List[str], mode: Literal["add", "replace"] = "add") -> Di
         return {"saved": False, "reason": "nothing_new", "detail": "Every term was already saved, a target title, or past the limit; nothing was written.", **report}
     try:
         _c().patch_user_settings("weights_jd", {"body_positive": merged})
-        back = ((_c().get_user_settings() or {}).get("weights_jd") or {}).get("body_positive") or {}
+        back = _skills_map(_c().get_user_settings() or {})
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
     norm = lambda m: {_skill_key(k): float(v) for k, v in m.items()}
@@ -810,7 +823,7 @@ def _profile(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     skills = None
     if isinstance(s, dict):
         titles = {str(t).strip().lower() for t in (s.get("title_preferences") or {}).get("positive_keywords") or []}
-        body = (s.get("weights_jd") or {}).get("body_positive") or {}
+        body = _skills_map(s)
         skills = sum(1 for t in body if str(t).strip().lower() not in titles)
     if resume is None and skills is None:
         return None

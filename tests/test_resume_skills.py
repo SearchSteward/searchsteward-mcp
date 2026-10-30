@@ -34,7 +34,19 @@ class _Api:
         return {"status": "success"}
 
     def get_user_settings(self):
-        return copy.deepcopy(self.settings)
+        """What GET /api/v1/user/settings returns: weights_jd comes back as ONE flat {term: weight} map (the server merges the stored rows,
+        a blob row {"body_positive": {...}} included), NOT as the nested shape the write goes in as."""
+        out = copy.deepcopy(self.settings)
+        wj = out.get("weights_jd")
+        if isinstance(wj, dict):
+            flat = {}
+            for k, v in wj.items():
+                if isinstance(v, dict):
+                    flat.update(v)
+                else:
+                    flat[k] = v
+            out["weights_jd"] = flat
+        return out
 
     def patch_user_settings(self, category, updates):
         self.calls.append(("patch", category, copy.deepcopy(updates)))
@@ -56,7 +68,8 @@ def _fn(name):
 
 
 BASE = {"title_preferences": {"positive_keywords": ["Senior Data Analyst", "Analytics Engineer"]},
-        "weights_jd": {"body_positive": {"senior data analyst": 3.0, "python": 9}, "body_negative": {"junior": 5}},
+        "weights_jd": {"body_positive": {"senior data analyst": 3.0, "python": 9}},
+        "weights_negative": {"body_negative": {"junior": 5}},
         "gates_hard": {"location_policy": "any"}, "thresholds": {"watch": 40}}
 
 
@@ -265,3 +278,29 @@ def test_update_preferences_still_writes_only_the_four_categories_and_points_at_
     assert out["error"] == "unsupported_category" and not api.calls
     doc = _fn("update_preferences").__doc__
     assert "set_skills" in doc and "save_resume" in doc
+
+
+# ---------------------------------------------------------------- the real GET shape (found by Support's end-to-end run, 10-30)
+def test_add_reads_the_flat_weights_jd_map_so_it_never_drops_the_saved_skills(monkeypatch):
+    api = _use(monkeypatch, settings=_settings())
+    assert "body_positive" not in api.get_user_settings()["weights_jd"]            # the fake serves the real, flat shape
+    out = _fn("set_skills")(["dbt"])
+    assert out["added"] == ["dbt"] and out["kept_existing"] == []
+    assert api.settings["weights_jd"]["body_positive"] == {"senior data analyst": 3.0, "python": 9, "dbt": 12}      # python survived
+
+
+def test_skills_map_reads_both_shapes():
+    assert server._skills_map({"weights_jd": {"sql": 2, "dbt": 12}}) == {"sql": 2, "dbt": 12}
+    assert server._skills_map({"weights_jd": {"body_positive": {"sql": 2}}}) == {"sql": 2}
+    assert server._skills_map({"weights_jd": {"sql": True, "x": "y", "dbt": 3}}) == {"dbt": 3}
+    assert server._skills_map({}) == {} and server._skills_map({"weights_jd": None}) == {}
+
+
+def test_the_thin_feed_skill_count_reads_the_flat_shape(monkeypatch):
+    class _Flat(_ThinClient):
+        def get_user_settings(self):
+            return {"title_preferences": {"positive_keywords": ["Senior Data Analyst"]},
+                    "weights_jd": {"senior data analyst": 3.0, "sql": 9, "dbt": 8, "tableau": 7}}
+    monkeypatch.setattr(server, "_c", lambda: _Flat())
+    p = _fn("why_is_my_feed_thin")()["profile"]
+    assert p["skills_saved"] == 3 and "line" not in p                              # three skills besides the title: no line
