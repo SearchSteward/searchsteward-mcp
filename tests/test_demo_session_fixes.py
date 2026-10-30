@@ -116,26 +116,30 @@ def test_three_skills_no_line(monkeypatch):
     assert p["skills_saved"] == 3 and "line" not in p
 
 
-def test_resume_present_no_line(monkeypatch):
+def test_resume_present_but_no_skills_still_gets_the_line(monkeypatch):
+    # Owner 10-30: a saved résumé changes no score, so it no longer silences the line; only 3+ skills do.
     _use(monkeypatch, status={**_THIN, "resume": {"status": "imported"}}, settings=_TITLE_ONLY,
          resume_text="Senior analyst, SQL, Tableau")
     p = _profile()
-    assert p["resume"] == "present" and "line" not in p
+    assert p["resume"] == "present" and p["skills_saved"] == 0 and "set_skills" in p["line"]
 
 
 def test_settings_upload_counts_although_the_wizard_flag_says_missing(monkeypatch):
     # activation.resume_profile_id is set only by the wizard; a later Settings upload leaves it unset.
     _use(monkeypatch, status={**_THIN, "resume": {"status": "missing"}}, settings=_TITLE_ONLY,
          resume_text="Senior analyst, SQL, Tableau")
-    assert "line" not in _profile()
+    p = _profile()
+    assert p["resume"] == "present"                                   # the résumé read wins over the wizard flag ...
+    assert "line" in p                                                # ... but with no skills the line fires either way
 
 
 def test_resume_read_failure_falls_back_to_the_status(monkeypatch):
     _use(monkeypatch, status={**_THIN, "resume": {"status": "imported"}}, settings=_TITLE_ONLY, resume_text=None)
     p = _profile()
-    assert p["resume"] == "present" and "line" not in p
+    assert p["resume"] == "present" and "line" in p                   # the line no longer depends on the résumé
     _use(monkeypatch, status={**_THIN, "resume": {"status": "skipped"}}, settings=_TITLE_ONLY, resume_text=None)
-    assert "line" in _profile()
+    p = _profile()
+    assert p["resume"] == "missing" and "line" in p
 
 
 def test_unreadable_settings_make_no_claim(monkeypatch):

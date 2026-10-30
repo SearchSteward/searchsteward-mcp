@@ -77,8 +77,9 @@ class _Raises:
         return boom
 
 
-# Required-only arguments return early for these three (a validation error, an empty update, a preview): give them what reaches the API.
-_REACH_API = {"update_application": {"note": "x"}, "update_preferences": {"updates": {"salary_min": 1}}, "set_up_search": {"confirm": True}}
+# Required-only arguments return early for these (a validation error, an empty update, a preview, a too-short résumé): give them what reaches the API.
+_REACH_API = {"update_application": {"note": "x"}, "update_preferences": {"updates": {"salary_min": 1}}, "set_up_search": {"confirm": True},
+              "save_resume": {"text": "x" * 200}}
 
 
 class _Fake:
