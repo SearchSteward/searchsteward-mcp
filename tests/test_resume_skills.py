@@ -304,3 +304,32 @@ def test_the_thin_feed_skill_count_reads_the_flat_shape(monkeypatch):
     monkeypatch.setattr(server, "_c", lambda: _Flat())
     p = _fn("why_is_my_feed_thin")()["profile"]
     assert p["skills_saved"] == 3 and "line" not in p                              # three skills besides the title: no line
+
+
+# ---------------------------------------------------------------- the gate (Owner decision 10-30): the line fires on skills < 3 ALONE
+class _ResumeThin(_ThinClient):
+    """A résumé is saved and one skill besides the title: the old gate (résumé missing) stayed silent here."""
+    def get_resume(self):
+        return {"id": 3, "name": "My CV", "text": RESUME}
+
+    def get_user_settings(self):
+        return {"title_preferences": {"positive_keywords": ["Senior Data Analyst"]},
+                "weights_jd": {"senior data analyst": 3.0, "sql": 9}}
+
+
+def test_the_line_fires_on_few_skills_even_when_a_resume_is_saved(monkeypatch):
+    monkeypatch.setattr(server, "_c", lambda: _ResumeThin())
+    p = _fn("why_is_my_feed_thin")()["profile"]
+    assert p["resume"] == "present" and p["skills_saved"] == 1
+    assert "set_skills" in p["line"] and "does not change scores" in p["line"]          # a résumé no longer answers the question
+
+
+def test_three_skills_silence_the_line_whether_or_not_there_is_a_resume(monkeypatch):
+    class _Enough(_ResumeThin):
+        def get_user_settings(self):
+            return {"title_preferences": {"positive_keywords": ["Senior Data Analyst"]},
+                    "weights_jd": {"senior data analyst": 3.0, "sql": 9, "dbt": 8, "tableau": 7}}
+    monkeypatch.setattr(server, "_c", lambda: _Enough())
+    assert "line" not in _fn("why_is_my_feed_thin")()["profile"]
+    monkeypatch.setattr(server, "_c", lambda: _ThinClient())                                # no résumé at all, still 0 skills: line
+    assert "line" in _fn("why_is_my_feed_thin")()["profile"]

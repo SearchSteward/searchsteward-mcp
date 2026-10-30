@@ -799,8 +799,8 @@ def why_is_my_feed_thin() -> Dict[str, Any]:
     return out
 
 
-# With no résumé and fewer saved skills than this, every score is title-only (demo 10-28: one
-# title, no résumé, 22 of 22 Weak with anchor=0).
+# With fewer saved skills than this every score is title-only (demo 10-28: one title, 22 of 22 Weak with anchor=0). A saved résumé does not change that, so
+# the profile line fires on the skill count alone.
 _MIN_SKILLS = 3
 
 
@@ -828,7 +828,7 @@ def _profile(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if resume is None and skills is None:
         return None
     out: Dict[str, Any] = {"resume": resume, "skills_saved": skills}
-    if resume == "missing" and skills is not None and skills < _MIN_SKILLS:
+    if skills is not None and skills < _MIN_SKILLS:
         # A saved résumé changes no score (it feeds tailoring only); the levers are skills (set_skills) and titles (update_preferences).
         out["line"] = ("Scores stay low because only a job title is saved and fewer than 3 skills. "
                        "Add 3-5 skills with set_skills (and more target titles with update_preferences) to lift them; "
