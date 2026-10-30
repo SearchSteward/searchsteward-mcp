@@ -1,4 +1,4 @@
-"""SearchSteward MCP server — twenty-three tools over the SearchSteward REST API.
+"""SearchSteward MCP server — twenty-five tools over the SearchSteward REST API.
 
 Run: `uvx searchsteward-mcp` (stdio). Requires SEARCHSTEWARD_API_KEY; optional
 SEARCHSTEWARD_API_BASE (defaults to https://searchsteward.com). See README.
@@ -477,6 +477,49 @@ def get_resume() -> Dict[str, Any]:
     return {"name": data.get("name"), "text": data.get("text")}
 
 
+# A real résumé is well over this; it stops a stray sentence from replacing the user's saved résumé.
+_MIN_RESUME_CHARS = 200
+
+
+@mcp.tool()
+def save_resume(text: str, name: Optional[str] = None) -> Dict[str, Any]:
+    """Save the user's résumé as their primary résumé (the one get_resume reads), replacing the text
+    of the one they already have.
+
+    This STORES the résumé for tailoring, cover letters and interview prep. It does NOT change match
+    scores or re-rank the feed: to change matching, put the skills in with set_skills (and the target
+    titles with update_preferences).
+
+    Confirm with the user before calling, because it overwrites their saved résumé text. Pass the FULL
+    résumé text, exactly as the user gave it, never a summary or a rewrite. Text shorter than 200
+    characters is refused. name is optional (default "Resume" for a new one; an existing résumé keeps
+    its name unless you pass one). Returns saved, whether it was newly created, and the character
+    count, after reading it back."""
+    body = str(text or "").strip()
+    if len(body) < _MIN_RESUME_CHARS:
+        return {"error": "resume_too_short",
+                "detail": f"Send the full résumé text (at least {_MIN_RESUME_CHARS} characters); got {len(body)}. "
+                          "Do not send a summary."}
+    nm = (name or "").strip() or None
+    try:
+        current = _c().get_resume() or {}
+        rid = current.get("id")
+        if rid:
+            _c().update_resume_profile(rid, body, nm)
+            created = False
+        else:
+            _c().create_resume_profile(nm or "Resume", body)      # the API makes a user's first profile the primary one
+            created = True
+        back = _c().get_resume() or {}
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    if str(back.get("text") or "").strip() != body:
+        return {"error": "resume_not_saved_as_primary",
+                "detail": "The résumé was sent but get_resume does not return it, so it is not the primary résumé. "
+                          "Tell the user; do not claim it was saved."}
+    return {"saved": True, "created": created, "name": back.get("name"), "characters": len(body)}
+
+
 @mcp.tool()
 def get_offer(application_id: int) -> Dict[str, Any]:
     """Retrieve offer details (base salary, bonus, equity, deadline) for a tracked application.
@@ -595,6 +638,9 @@ def update_preferences(
     get_preferences first and confirm the change with the user before calling — do not infer a
     preference change from a single dismissed job; use dismiss_match for that.
 
+    Skills (the keywords in job descriptions) are NOT written here: use set_skills. The résumé text is
+    stored with save_resume (it does not change scores).
+
     category must be one of:
       'compensation_location' — primary_zip, radius_miles, min_salary_usd, target_salary_usd
       'gates_hard'            — location_policy ('any'|'onsite_local'|'remote_only'),
@@ -622,6 +668,86 @@ def update_preferences(
         return _c().patch_user_settings(category, updates)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+
+
+_MAX_SKILLS = 15
+
+
+def _skill_key(term: Any) -> str:
+    """The scorer's term key (scoring_v2._norm_keyword_key): lower-case, -_/ read as spaces, runs of spaces collapsed."""
+    return re.sub(r"\s+", " ", re.sub(r"[-_/]+", " ", str(term).lower().strip())).strip()
+
+
+def _skill_weight(idx: int) -> int:
+    """The app's own rank weight for résumé-derived skills (profile_service.fallback_preferences_from_resume): 12, 11, 10 ... floor 5."""
+    return max(5, 12 - idx)
+
+
+@mcp.tool()
+def set_skills(skills: List[str], mode: Literal["add", "replace"] = "add") -> Dict[str, Any]:
+    """Save the user's skills (the keywords in their job descriptions that raise a match score).
+
+    ⚠ This RE-SCORES THE WHOLE FEED, like update_preferences: jobs can disappear as well as appear.
+    Read get_preferences first and CONFIRM the list and the mode with the user before calling.
+
+    skills is a list of short terms ('dbt', 'Snowflake', 'SQL'), most important first: a term's weight
+    comes from its position in YOUR list (12, 11, 10 ... never below 5). At most 15 are used; extras are
+    reported, not saved. Terms that are only one of the user's target titles are dropped (titles go in
+    with update_preferences). mode='add' (default) keeps every saved skill and its weight and adds the
+    new ones; mode='replace' makes this list the user's skills (their target-title terms are kept).
+    Only the skills are written: no other setting changes. The result says what was added, kept and
+    dropped, after reading the saved skills back."""
+    if mode not in ("add", "replace"):
+        return {"error": "bad_mode", "detail": "mode must be 'add' or 'replace'."}
+    try:
+        s = _c().get_user_settings() or {}
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    titles = {_skill_key(t) for t in (s.get("title_preferences") or {}).get("positive_keywords") or []}
+    current = dict((s.get("weights_jd") or {}).get("body_positive") or {})
+    wanted: Dict[str, int] = {}
+    dropped_titles: List[str] = []
+    dropped_cap: List[str] = []
+    seen = set()
+    for idx, raw in enumerate(skills or []):
+        term = re.sub(r"\s+", " ", str(raw or "").strip().lower())
+        key = _skill_key(term)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if idx >= _MAX_SKILLS:
+            dropped_cap.append(term)
+        elif key in titles:
+            dropped_titles.append(term)
+        else:
+            wanted[term] = _skill_weight(idx)
+    by_key = {_skill_key(k): k for k in current}
+    if mode == "add":
+        added = {t: w for t, w in wanted.items() if _skill_key(t) not in by_key}
+        kept = [t for t in wanted if _skill_key(t) in by_key]
+        merged = {**current, **added}
+    else:
+        if not wanted:
+            return {"error": "no_usable_skills",
+                    "detail": "Nothing to save: every term was empty, a target title, or past the 15 limit. "
+                              "Replace would have emptied the user's skills, so nothing was written."}
+        title_terms = {k: v for k, v in current.items() if _skill_key(k) in titles}
+        added, kept = dict(wanted), []
+        merged = {**title_terms, **wanted}
+    report = {"mode": mode, "added": sorted(added), "kept_existing": kept, "dropped_as_titles": dropped_titles, "dropped_over_limit": dropped_cap}
+    if mode == "add" and not added:
+        return {"saved": False, "reason": "nothing_new", "detail": "Every term was already saved, a target title, or past the limit; nothing was written.", **report}
+    try:
+        _c().patch_user_settings("weights_jd", {"body_positive": merged})
+        back = ((_c().get_user_settings() or {}).get("weights_jd") or {}).get("body_positive") or {}
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+    norm = lambda m: {_skill_key(k): float(v) for k, v in m.items()}
+    if norm(back) != norm(merged):
+        return {"error": "skills_not_saved_as_sent",
+                "detail": "The skills were sent but reading them back does not match. Tell the user; do not claim they were saved."}
+    skills_now = sorted(k for k in back if _skill_key(k) not in titles)
+    return {"saved": True, **report, "skills_now": skills_now, "rescoring": "The whole feed is being re-scored; jobs can appear and disappear."}
 
 
 _THIN_KEYS = ("state", "feed_count", "strong_count", "filtered_out_count", "evaluated_below_floor_count",
@@ -690,9 +816,10 @@ def _profile(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
     out: Dict[str, Any] = {"resume": resume, "skills_saved": skills}
     if resume == "missing" and skills is not None and skills < _MIN_SKILLS:
-        # update_preferences cannot write weights_jd, so both remedies point at the app.
-        out["line"] = ("Scores stay low because only a job title is saved: no résumé and fewer than 3 skills. "
-                       "Add your résumé or 3-5 skills in the app's Settings to lift them.")
+        # A saved résumé changes no score (it feeds tailoring only); the levers are skills (set_skills) and titles (update_preferences).
+        out["line"] = ("Scores stay low because only a job title is saved and fewer than 3 skills. "
+                       "Add 3-5 skills with set_skills (and more target titles with update_preferences) to lift them; "
+                       "saving a résumé with save_resume does not change scores.")
     return out
 
 

@@ -155,6 +155,17 @@ class SearchStewardClient:
     def get_resume(self) -> Any:
         return self._request("GET", "/api/v1/resume/profile")
 
+    def create_resume_profile(self, name: str, text: str) -> Any:
+        """POST a new résumé. The API makes a user's FIRST profile the primary one; the response is {"status", "id"} (no text)."""
+        return self._request("POST", "/api/v1/resume/profiles", json={"name": name, "text": text})
+
+    def update_resume_profile(self, profile_id: int, text: str, name: Optional[str] = None) -> Any:
+        """PATCH one résumé by id (the route 400s without it). Sends only what changes: id, text and, when given, name."""
+        body: Dict[str, Any] = {"id": profile_id, "text": text}
+        if name:
+            body["name"] = name
+        return self._request("PATCH", "/api/v1/resume/profile", json=body)
+
     def get_offer(self, application_id: int) -> Any:
         return self._request("GET", f"/api/v1/applications/{application_id}/offer-workspace")
 

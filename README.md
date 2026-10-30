@@ -118,10 +118,10 @@ A key uses **your plan's limits — identical to the web app**; a free account m
 
 | | Free | Radar (paid) |
 |---|---|---|
-| Search, read, résumé (`search_matches`, `get_job`, `get_resume`) | ✅ | ✅ |
+| Search, read, save your résumé (`search_matches`, `get_job`, `get_resume`, `save_resume`) | ✅ | ✅ |
 | Track & triage (`log_application`, `save_match`, `dismiss_match`, …) | ✅ | ✅ |
 | Question bank & match-quality review | ✅ | ✅ |
-| Set up, read & change search preferences (`set_up_search`, `why_is_my_feed_thin`, `get_preferences`, `update_preferences`) | ✅ | ✅ |
+| Set up, read & change search preferences (`set_up_search`, `why_is_my_feed_thin`, `get_preferences`, `update_preferences`, `set_skills`) | ✅ | ✅ |
 | `check_new_matches` (manual pull) | ✅ | ✅ |
 | Full match-feed depth (beyond the free cap) | capped + upgrade hint | ✅ full |
 | `get_negotiation_playbook` | ❌ 402 | ✅ |
@@ -193,13 +193,13 @@ A key can be **scoped** to limit what it can reach — useful for a key you'll p
 Scope is **set once when the key is minted and can never be widened** — mint a new key to change it. Enforcement is server-side. A `read_no_pii` key gets a **403** on:
 
 - **personal data:** `get_resume`, `get_offer`, `get_preferences`, `why_is_my_feed_thin` (it includes your target titles);
-- **every write:** `set_up_search`, `update_preferences`, `log_application`, `track_external_application`, `update_application`, `save_match`, `dismiss_match`, `restore_match`, `save_question`, `submit_match_verdict`, `get_negotiation_playbook`.
+- **every write:** `set_up_search`, `update_preferences`, `set_skills`, `save_resume`, `log_application`, `track_external_application`, `update_application`, `save_match`, `dismiss_match`, `restore_match`, `save_question`, `submit_match_verdict`, `get_negotiation_playbook`.
 
 The **Settings → Connect to Claude** card mints `full` keys. A `read_no_pii` key is minted through the API (`POST /api/v1/api-keys` with `"scope": "read_no_pii"` and your `current_password`) from a signed-in session.
 
 ### Tools
 
-23 tools in six groups, plus one prompt.
+25 tools in six groups, plus one prompt.
 
 **Discover & analyze**
 | Tool | What it does |
@@ -208,6 +208,7 @@ The **Settings → Connect to Claude** card mints `full` keys. A `read_no_pii` k
 | `check_new_matches` | Pull the new matches discovered in the last N hours (default 48), by the app's match band: Strong + Good (default) or Strong only; each row is labelled. Scans the top page only — see the tool's own note. |
 | `get_job` | Full detail for one match — score breakdown, ghost-listing signal, description. |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it natively. |
+| `save_resume` | Save your résumé text as your primary résumé, for tailoring, cover letters and interview prep. It does **not** change your match scores (skills do: `set_skills`). Claude confirms with you first and sends the full text, never a summary. |
 
 **Track**
 | Tool | What it does |
@@ -240,6 +241,7 @@ The **Settings → Connect to Claude** card mints `full` keys. A `read_no_pii` k
 | `set_up_search` | Set up a new account's search from one sentence ("senior data analyst in Denver, open to remote, $120k+"). Shows the criteria first and saves only when called again with `confirm=True` after you agree. Never overwrites existing criteria. |
 | `get_preferences` | Read the settings that decide which jobs reach your feed — location (ZIP, radius, policy), salary floor, target titles, excluded keywords, thresholds. |
 | `update_preferences` | Change those settings and re-rank the feed. ⚠ **Re-scores your whole feed — jobs can disappear as well as appear.** Read `get_preferences` first and send only the keys you're changing. |
+| `set_skills` | Save the skills (the keywords in job descriptions) that raise your match scores: a list, most important first, `add` (default) or `replace`; at most 15, target-title terms dropped. ⚠ **Re-scores your whole feed.** Claude confirms the list with you first. |
 
 **Audit match quality**
 | Tool | What it does |
