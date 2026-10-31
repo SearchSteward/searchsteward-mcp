@@ -853,6 +853,7 @@ def test_daily_brief_is_a_registered_read_tool_and_the_docstring_does_not_promis
     assert "daily_brief" in tools
     doc = tools["daily_brief"].description
     assert "NOT included" in doc and "as_of" in doc and "no_response_days" in doc
+    assert "first seen by SearchSteward" in doc and "does not mean the job newly" in doc
 
 
 def test_the_client_sends_the_threshold_as_a_query_param_and_drops_none():

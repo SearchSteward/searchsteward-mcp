@@ -773,6 +773,8 @@ def daily_brief(since: Optional[str] = None, no_response_days: int = 10) -> Dict
     (default the last 24 hours; pass the previous call's `as_of` back as `since` to see only what is new), your
     applications still at "applied" with no response after no_response_days (default 10, oldest first), saved jobs
     that went missing from the employer's site, and the counts (totals; each list shows at most 25).
+    "New" means the JOB was first seen by SearchSteward at or after `since` (inclusive); it does not mean the job newly
+    entered the user's feed, so a changed search or preferences will not surface older jobs here.
     Every row names its job or application id: follow up with get_job or get_application. `since` is an ISO 8601
     timestamp, use Z for UTC (2026-11-03T09:00:00Z). Upcoming interviews are NOT included: the response says so in
     `not_included`; do not tell the user "no interviews". Read-only. Do NOT use this to browse the whole feed
