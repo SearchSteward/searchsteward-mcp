@@ -23,6 +23,10 @@ class _FakeClient:
     def get_applications(self, params):
         return {"applications": [{"id": 3, "status": "applied"}]}
 
+    def get_daily_brief(self, params):
+        self.calls.append(("get_daily_brief", params))
+        return {"as_of": "2026-11-03T09:00:00+00:00", "counts": {"new_matches": 0, "no_response": 0, "saved_missing": 0}, "not_included": ["upcoming_interviews"]}
+
     def apply_track(self, job_id, note=None):
         self.calls.append(("apply_track", job_id, note))
         return {"status": "success", "application_id": 9}
@@ -822,3 +826,46 @@ def test_hosted_per_request_client_wins_over_the_process_client(monkeypatch):
     finally:
         server.current_client.reset(token)
     assert server._c() is server._client
+
+
+def test_daily_brief_passes_the_two_params_and_returns_the_api_json_unchanged(_fake):
+    out = _fn("daily_brief")(since="2026-11-02T09:00:00Z", no_response_days=7)
+    assert out["not_included"] == ["upcoming_interviews"] and out["counts"]["new_matches"] == 0
+    assert _fake.calls[-1] == ("get_daily_brief", {"since": "2026-11-02T09:00:00Z", "no_response_days": 7})
+
+
+def test_daily_brief_defaults_leave_since_to_the_server(_fake):
+    _fn("daily_brief")()
+    assert _fake.calls[-1] == ("get_daily_brief", {"since": None, "no_response_days": 10})
+
+
+def test_daily_brief_turns_an_api_error_into_an_error_result(monkeypatch, _fake):
+    def boom(params):
+        raise ApiError(422, "since must be an ISO 8601 timestamp")
+    monkeypatch.setattr(_fake, "get_daily_brief", boom)
+    out = _fn("daily_brief")(since="yesterday")
+    assert out["error"] is True and out["status"] == 422
+
+
+def test_daily_brief_is_a_registered_read_tool_and_the_docstring_does_not_promise_interviews():
+    import asyncio
+    tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+    assert "daily_brief" in tools
+    doc = tools["daily_brief"].description
+    assert "NOT included" in doc and "as_of" in doc and "no_response_days" in doc
+
+
+def test_the_client_sends_the_threshold_as_a_query_param_and_drops_none():
+    from searchsteward_mcp.client import SearchStewardClient
+    seen = {}
+
+    class _C(SearchStewardClient):
+        def __init__(self):
+            pass
+
+        def _request(self, method, path, **kw):
+            seen.update(method=method, path=path, params=kw.get("params"))
+            return {}
+
+    _C().get_daily_brief({"since": None, "no_response_days": 10})
+    assert seen == {"method": "GET", "path": "/api/v1/brief/daily", "params": {"no_response_days": 10}}

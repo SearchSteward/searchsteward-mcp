@@ -768,6 +768,22 @@ _THIN_KEYS = ("state", "feed_count", "strong_count", "filtered_out_count", "eval
 
 
 @mcp.tool()
+def daily_brief(since: Optional[str] = None, no_response_days: int = 10) -> Dict[str, Any]:
+    """The answer to "what should I do today?" in ONE call: new Strong and Good matches first seen since `since`
+    (default the last 24 hours; pass the previous call's `as_of` back as `since` to see only what is new), your
+    applications still at "applied" with no response after no_response_days (default 10, oldest first), saved jobs
+    that went missing from the employer's site, and the counts (totals; each list shows at most 25).
+    Every row names its job or application id: follow up with get_job or get_application. `since` is an ISO 8601
+    timestamp, use Z for UTC (2026-11-03T09:00:00Z). Upcoming interviews are NOT included: the response says so in
+    `not_included`; do not tell the user "no interviews". Read-only. Do NOT use this to browse the whole feed
+    (search_matches) or to look up one application (get_application)."""
+    try:
+        return _c().get_daily_brief({"since": since, "no_response_days": no_response_days})
+    except Exception as exc:  # noqa: BLE001
+        return _err(exc)
+
+
+@mcp.tool()
 def why_is_my_feed_thin() -> Dict[str, Any]:
     """Explain a thin or empty feed with the app's own diagnosis (the panel on the matches page):
     the feed and Strong counts, and when the feed is thin, the ONE saved filter that narrows it
