@@ -238,6 +238,21 @@ def _row(job: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_NO_SEARCH_MESSAGE = "No search is set up yet. Tell me the job titles and location you want (set_up_search)."
+
+
+def _no_search_yet() -> bool:
+    """True when the account has no search at all (no title or keyword anchor, no target companies). One status read, made only when a
+    feed came back EMPTY; a failed read (a read-only grant cannot read it) answers False so the empty answer is returned as it was."""
+    try:
+        status = _c().get_activation_status() or {}
+    except Exception:  # noqa: BLE001
+        return False
+    if (status.get("feed_guidance") or {}).get("primary_action") == "set_up_search":
+        return True
+    return (status.get("preferences") or {}).get("scoring_ready") is False and not status.get("target_company_count")
+
+
 @mcp.tool()
 def search_matches(
     query: Optional[str] = None,
@@ -271,6 +286,9 @@ def search_matches(
     jobs = data.get("jobs", data) if isinstance(data, dict) else data
     rows = _fold([_row(j) for j in jobs]) if isinstance(jobs, list) else []
     result: Dict[str, Any] = {"matches": rows, "page": page, "count": len(rows)}
+    # An empty, unfiltered first page: say so when the cause is that no search exists (cold-start dry run 10-31).
+    if not rows and page == 1 and not (query or location or salary_min or status) and _no_search_yet():
+        result["message"] = _NO_SEARCH_MESSAGE
     if isinstance(data, dict):
         upgrade = _feed_depth_upgrade(data, page)
         if upgrade:
@@ -331,9 +349,12 @@ def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Good")
     label = "Strong" if band == "Strong" else "Strong or Good"
     result: Dict[str, Any] = {"new_high_fit": fresh, "count": len(fresh), "window_hours": hours, "band": band}
     if not fresh:
-        result["message"] = f"No new {label} Matches in the last {hours}h."
-        if band == "Strong":
-            result["message"] += " Try band='Good' to include Good Matches."
+        if not jobs and _no_search_yet():
+            result["message"] = _NO_SEARCH_MESSAGE
+        else:
+            result["message"] = f"No new {label} Matches in the last {hours}h."
+            if band == "Strong":
+                result["message"] += " Try band='Good' to include Good Matches."
     else:
         # Conversion pointer: the pull tool is the manual version of the paid push.
         result["upgrade"] = {
@@ -821,18 +842,27 @@ def _profile(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     except Exception:  # noqa: BLE001
         s = None
     skills = None
+    n_titles = 0
     if isinstance(s, dict):
         titles = {str(t).strip().lower() for t in (s.get("title_preferences") or {}).get("positive_keywords") or []}
         body = _skills_map(s)
         skills = sum(1 for t in body if str(t).strip().lower() not in titles)
+        # weights_title also anchors a search (the API counts it as a title); a title saved only there is still a saved title.
+        n_titles = len(titles) or len(s.get("weights_title") or {})
     if resume is None and skills is None:
         return None
     out: Dict[str, Any] = {"resume": resume, "skills_saved": skills}
     if skills is not None and skills < _MIN_SKILLS:
         # A saved résumé changes no score (it feeds tailoring only); the levers are skills (set_skills) and titles (update_preferences).
-        out["line"] = ("Scores stay low because only a job title is saved and fewer than 3 skills. "
-                       "Add 3-5 skills with set_skills (and more target titles with update_preferences) to lift them; "
-                       "saving a résumé with save_resume does not change scores.")
+        if n_titles == 0:
+            # Nothing saved at all: the title claim below would be false (cold-start dry run 10-31).
+            out["line"] = ("Nothing is saved yet: no job title and fewer than 3 skills, so scores stay low. "
+                           "Tell me the role and place you want (set_up_search), then add 3-5 skills with set_skills to lift them; "
+                           "saving a résumé with save_resume does not change scores.")
+        else:
+            out["line"] = ("Scores stay low because only a job title is saved and fewer than 3 skills. "
+                           "Add 3-5 skills with set_skills (and more target titles with update_preferences) to lift them; "
+                           "saving a résumé with save_resume does not change scores.")
     return out
 
 
