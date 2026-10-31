@@ -111,7 +111,7 @@ You choose on the consent page (Route 1). On Route 2 the key you make in Setting
 |---|---|
 | `search_matches` | Search your matches, score-ranked, 25 per page; filter by title/keyword, location (for example "Remote"), minimum pay (range overlap: a job is kept if its pay range reaches the floor) and status. |
 | `check_new_matches` | The new matches from the last N hours (default 48), Strong plus Good by default or Strong only. Looks at the top 25 only. |
-| `get_job` | One match in full: score breakdown, a posting-quality flag (`ghost_signal`, based on the job description only, for example a stub or sparse description), and the description (about 4,000 characters; some arrive with their HTML tags escaped, and we are fixing that). |
+| `get_job` | One match in full: score breakdown; a posting-quality flag (`ghost_signal`, based on the job description only, for example a stub or sparse description); the job description as plain text (`description_text`, up to 12,000 characters, with `description_text_truncated`; the older `description` field is still returned, cut at about 4,000 characters, and some of those arrive with escaped HTML tags); and posting facts (see below). |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it. |
 | `save_resume` | Saves your résumé text as your primary résumé (at least 200 characters; Claude confirms first and sends the full text). It does **not** change your scores; skills do (`set_skills`). |
 
@@ -119,7 +119,7 @@ You choose on the consent page (Route 1). On Route 2 the key you make in Setting
 
 | Tool | What it does |
 |---|---|
-| `list_applications` | Your tracked applications, 25 per page, filterable by status. |
+| `list_applications` | Your tracked applications, 25 per page, filterable by status. Each carries `days_since_applied` (0 for today, empty if the application has no date). |
 | `get_application` | One application: status, notes, dates, and the offer if there is one. |
 | `log_application` | Marks a **feed** job as applied. |
 | `track_external_application` | Tracks a job you applied to **elsewhere** (LinkedIn, a recruiter, a company site); it need not be in your feed. |
@@ -160,6 +160,8 @@ You choose on the consent page (Route 1). On Route 2 the key you make in Setting
 | `submit_match_verdict` | Records ground truth on one job (`should_surface`, `should_not_surface`, `unsure`). |
 | `review_summary` | Counts the verdicts you have submitted. |
 
+**About the posting facts `get_job` returns.** `first_seen_at` is when SearchSteward first saw the posting, not the employer's date. `posted_at` is the employer's posting date, known for only about 41% of active jobs and empty otherwise. `seen_count` is how many of our scans saw the posting. `missing_since_at` is since when scans stopped seeing it (empty if it is still seen). `years_required`, `degree_required` and `clearance_required` are what the job description states: empty means we found no signal, not that it is not required. `work_arrangement` (with `work_arrangement_source`) is set for only about 15% of jobs.
+
 **Prompt: `practice_interview(job_id)`** is a mock interview for one of your matches: Claude reads the job, your résumé and your saved questions, asks one question at a time, gives feedback on each answer, and ends with your weak spots. It runs entirely in your own Claude and uses no extra SearchSteward capacity. The prompt appears in the prompt menu on **Route 2 only**; on the connector (Route 1) it is not listed, so just ask in chat: "Run a mock interview for my top match, one question at a time." Claude does the same work with `get_job`, `get_resume` and `list_questions`.
 
 ## Best ways to use it
@@ -172,7 +174,7 @@ Every prompt below was run against the live service on 2026-10-31 on a demo acco
 2. **Start the day.**
    *"Anything new in my matches today?"* → `check_new_matches` returns `{new_high_fit: […], count, window_hours: 48, band: "Good", message}`. Each row carries its band (Strong Match, Good Match). An empty list comes back with a message, not an error. Ask "Strong only, last 7 days" to widen the window and narrow the band.
 3. **Understand a match.**
-   *"Show my top 5 matches, and tell me why the first one scored high."* → `search_matches` rows look like `{id, title, company, location, salary_low, salary_high, score, band, remote, discovered, seen_on_site}`; then `get_job` adds the score breakdown (`match_reasoning`, `matched_keywords`, `score_movers`) and a description cut at about 4,000 characters (some arrive with their HTML tags escaped; we are fixing that). `ghost_signal` is a description-quality flag; it does not say whether a job was reposted or closed and reopened.
+   *"Show my top 5 matches, and tell me why the first one scored high."* → `search_matches` rows look like `{id, title, company, location, salary_low, salary_high, score, band, remote, discovered, seen_on_site}`; then `get_job` adds the score breakdown (`match_reasoning`, `matched_keywords`, `score_movers`) the job description as plain text (`description_text`) and when SearchSteward first saw the posting (`first_seen_at`). `ghost_signal` is a description-quality flag; it does not say whether a job was closed and reopened.
 4. **Find out why the feed is thin.**
    *"Why is my feed so thin?"* → `why_is_my_feed_thin`: `{feed_count, strong_count, thin_constraint: {label, excludes}, guidance: {headline, message, primary_action}, profile: {resume, skills_saved}}`. On the demo account the filter cutting most was location (68 jobs excluded).
 5. **Filter by pay or place.**
@@ -192,13 +194,12 @@ Every prompt below was run against the live service on 2026-10-31 on a demo acco
 
 Be aware of these limits today; we have checked each against the live service.
 
-- **Reposts and closed-then-reopened history.** `get_job` does not tell you how long a job has been up or whether it was closed and reopened; `ghost_signal` looks at the description only.
-- **"No response" follow-ups.** `list_applications` shows the date you applied, but its days-in-stage and stalled flags are not reliable for applications you tracked yourself, so do not rely on them; Claude can work from the applied date.
+- **Closed-then-reopened history.** `get_job` shows when SearchSteward first saw a posting, how many of our scans saw it and since when scans stopped seeing it, but it does not yet say whether a job was closed and reopened; `ghost_signal` looks at the description only.
+- **"No response" follow-ups.** `list_applications` shows `days_since_applied` for each application, so Claude can work out which ones have gone quiet; its days-in-stage and stalled flags are still not reliable for applications you tracked yourself, so do not rely on them.
 - **Interviews.** There is no tool that lists upcoming interviews, and none that logs one; a note such as "phone screen Tuesday 3pm" is free text on the application.
 - **A daily brief in one call**, and **a company's other open roles** as a tool: not available. Ask Claude to combine `check_new_matches` and `list_applications`.
-- **Job descriptions.** Some arrive with their HTML tags escaped (7 of 25 in our test), which costs tokens but is still readable by Claude; we are fixing it.
 
-Coming (not live yet, so do not count on it): posting age and reopen count on `get_job`, readable job descriptions, and a days-since-applied field on `list_applications`. This list will change as they ship.
+Coming (not live yet, so do not count on it): a simple yes/no on `get_job` for whether a job was reopened. This list will change as it ships.
 
 ## Free vs Radar
 
