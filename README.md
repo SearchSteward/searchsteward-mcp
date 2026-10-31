@@ -28,7 +28,7 @@ You need a free SearchSteward account: **[searchsteward.com](https://searchstewa
 
    > Set up my job search for "data analyst" near "Colorado Springs, CO" and show me what you find.
 
-   Claude shows the search it is about to save and asks you to confirm (this needs Full access). Say yes. In our test the first matches were visible about 30 seconds after the confirm; allow a minute or two, and longer if many people sign up at once. Then ask: "What are my best matches right now?"
+   Claude shows the search it is about to save and asks you to confirm (this needs Full access). Say yes. First matches usually show within a minute; it can take a few minutes when it's busy. Then ask: "What are my best matches right now?"
 
 Which Claude plans can add a custom connector is up to Anthropic, so check Settings, Connectors on yours. If you do not see "Add custom connector", use Route 2.
 
@@ -95,11 +95,11 @@ You choose on the consent page (Route 1). On Route 2 the key you make in Setting
 | | Full access | Read-only |
 |---|---|---|
 | Search and read matches (`search_matches`, `check_new_matches`, `get_job`) | yes | yes |
-| Read applications and your question bank (`list_applications`, `get_application`, `list_questions`, `review_summary`) | yes | yes |
-| Résumé, skills, search settings, offers (`get_resume`, `save_resume`, `set_skills`, `get_preferences`, `update_preferences`, `set_up_search`, `why_is_my_feed_thin`, `get_offer`) | yes | **refused** (403 "scope does not permit personal data") |
-| Save, dismiss, log or track anything (`save_match`, `dismiss_match`, `log_application`, `track_external_application`, `update_application`, `save_question`, `submit_match_verdict`) | yes | **refused** (403 "scope does not permit write access") |
+| Read applications and your question bank, audit match quality (`list_applications`, `get_application`, `list_questions`, `review_summary`, `review_candidates`) | yes | yes |
+| Read or save your résumé, skills, search settings and offers (`get_resume`, `save_resume`, `set_skills`, `get_preferences`, `why_is_my_feed_thin`, `get_offer`) | yes | **refused** (403 "scope does not permit personal data") |
+| Save, dismiss, log, track or change anything (`save_match`, `dismiss_match`, `restore_match`, `log_application`, `track_external_application`, `update_application`, `save_question`, `submit_match_verdict`, `update_preferences`, `get_negotiation_playbook`) | yes | **refused** (403 "scope does not permit write access") |
 
-A Read-only connection still lists all 25 tools; the refused ones answer with the 403 above. Because the mock interview reads your résumé, it needs Full access.
+`set_up_search` is split: without `confirm` it reads the search back (`saved: false`) on a Read-only connection too, and with `confirm=True` the save is refused (403 "write access"). A Read-only connection still lists all 25 tools; the refused ones answer with the 403 above. Because the mock interview reads your résumé, it needs Full access.
 
 ## The tools
 
@@ -111,7 +111,7 @@ A Read-only connection still lists all 25 tools; the refused ones answer with th
 |---|---|
 | `search_matches` | Search your matches, score-ranked, 25 per page; filter by title/keyword, location (for example "Remote"), minimum pay (range overlap: a job is kept if its pay range reaches the floor) and status. |
 | `check_new_matches` | The new matches from the last N hours (default 48), Strong plus Good by default or Strong only. Looks at the top 25 only. |
-| `get_job` | One match in full: score breakdown, a posting-quality flag (`ghost_signal`, based on the job description only, for example a stub or sparse description), and the description (4,000 characters at most, currently with its HTML tags escaped). |
+| `get_job` | One match in full: score breakdown, a posting-quality flag (`ghost_signal`, based on the job description only, for example a stub or sparse description), and the description (about 4,000 characters; some arrive with their HTML tags escaped, and we are fixing that). |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it. |
 | `save_resume` | Saves your résumé text as your primary résumé (at least 200 characters; Claude confirms first and sends the full text). It does **not** change your scores; skills do (`set_skills`). |
 
@@ -168,15 +168,15 @@ Every prompt below was run against the live service on 2026-10-31 on a demo acco
 
 1. **Set up your search by chat** (new accounts).
    *"Set up my job search: senior data analyst in Denver, hybrid is fine, $120k+."*
-   Calls `set_up_search` twice. First: `{saved: false, criteria: {title_includes, location, radius_miles: 30, salary_min, work_type}, summary, next}`, a read-back that saves nothing. After you say yes: `{saved: true, …, feed_pending: true}`. Matches appeared in about 30 seconds. A pay floor hides jobs whose pay tops out below it; check you typed the right number of zeros.
+   Calls `set_up_search` twice. First: `{saved: false, criteria: {title_includes, location, radius_miles: 30, salary_min, work_type}, summary, next}`, a read-back that saves nothing. After you say yes: `{saved: true, …, feed_pending: true}`. First matches usually show within a minute; it can take a few minutes when it's busy. A pay floor hides jobs whose pay tops out below it; check you typed the right number of zeros.
 2. **Start the day.**
    *"Anything new in my matches today?"* → `check_new_matches` returns `{new_high_fit: […], count, window_hours: 48, band: "Good", message}`. Each row carries its band (Strong Match, Good Match). An empty list comes back with a message, not an error. Ask "Strong only, last 7 days" to widen the window and narrow the band.
 3. **Understand a match.**
-   *"Show my top 5 matches, and tell me why the first one scored high."* → `search_matches` rows look like `{id, title, company, location, salary_low, salary_high, score, band, remote, discovered, seen_on_site}`; then `get_job` adds the score breakdown (`match_reasoning`, `matched_keywords`, `score_movers`) and a description cut at 4,000 characters. `ghost_signal` is a description-quality flag; it does not say whether a job was reposted or closed and reopened.
+   *"Show my top 5 matches, and tell me why the first one scored high."* → `search_matches` rows look like `{id, title, company, location, salary_low, salary_high, score, band, remote, discovered, seen_on_site}`; then `get_job` adds the score breakdown (`match_reasoning`, `matched_keywords`, `score_movers`) and a description cut at about 4,000 characters (some arrive with their HTML tags escaped; we are fixing that). `ghost_signal` is a description-quality flag; it does not say whether a job was reposted or closed and reopened.
 4. **Find out why the feed is thin.**
    *"Why is my feed so thin?"* → `why_is_my_feed_thin`: `{feed_count, strong_count, thin_constraint: {label, excludes}, guidance: {headline, message, primary_action}, profile: {resume, skills_saved}}`. On the demo account the filter cutting most was location (68 jobs excluded).
 5. **Filter by pay or place.**
-   *"Which of my matches pay $150k or more?"* and *"Only the remote ones."* → `search_matches` with `salary_min` (12 of 15 rows) and `location: "Remote"` (13 of 15). Pay uses range overlap, so a 100k–200k role passes a 150k floor; read each row's `salary_low` and `salary_high`.
+   *"Which of my matches pay $150k or more?"* and *"Only the remote ones."* → `search_matches` with `salary_min` (12 of 15 rows) and `location: "Remote"` (13 of 15). Pay uses range overlap, so a 100k–200k role passes a 150k floor, and jobs with no listed pay still show (15 of 25 in our test); read each row's `salary_low` and `salary_high`.
 6. **Triage by voice.**
    *"Save the first one, hide the third, that's really a sales role."* → `save_match` returns `{status: "success", application_id}`; `dismiss_match` with reason `not_relevant` returns `{status: "ok", hidden: true}`; *"Actually, bring that back"* → `restore_match` returns `{status: "success"}`.
 7. **Teach it your skills.**
@@ -196,7 +196,7 @@ Be aware of these limits today; we have checked each against the live service.
 - **"No response" follow-ups.** `list_applications` shows the date you applied, but its days-in-stage and stalled flags are not reliable for applications you tracked yourself, so do not rely on them; Claude can work from the applied date.
 - **Interviews.** There is no tool that lists upcoming interviews, and none that logs one; a note such as "phone screen Tuesday 3pm" is free text on the application.
 - **A daily brief in one call**, and **a company's other open roles** as a tool: not available. Ask Claude to combine `check_new_matches` and `list_applications`.
-- **Job descriptions** currently arrive with their HTML tags escaped, which costs tokens but is still readable by Claude.
+- **Job descriptions.** Some arrive with their HTML tags escaped (7 of 25 in our test), which costs tokens but is still readable by Claude; we are fixing it.
 
 Coming (not live yet, so do not count on it): posting age and reopen count on `get_job`, readable job descriptions, and a days-since-applied field on `list_applications`. This list will change as they ship.
 
@@ -208,7 +208,7 @@ Coming (not live yet, so do not count on it): posting age and reopen count on `g
 | Track and triage applications | ✅ | ✅ |
 | Question bank, match-quality review | ✅ | ✅ |
 | Set up and change your search | ✅ | ✅ |
-| `check_new_matches` (you ask, it looks) | ✅ | ✅ |
+| `check_new_matches` (you ask, it looks) | ✅ (free accounts may see an upgrade hint in the results) | ✅ |
 | Full match-feed depth | capped, with an upgrade hint in `search_matches` (from the code; our demo feed was under the cap) | ✅ |
 | `get_negotiation_playbook` | ❌ 402 | ✅ |
 
@@ -266,7 +266,7 @@ It **cannot** mint or revoke keys, reach admin routes, delete your account, or r
 Scope is set once when the key is made and can never be widened. Enforcement is server-side. `read_no_pii` gets a 403 on:
 
 - **personal data:** `get_resume`, `get_offer`, `get_preferences`, `why_is_my_feed_thin`, `save_resume`, `set_skills`;
-- **every write:** `set_up_search`, `update_preferences`, `log_application`, `track_external_application`, `update_application`, `save_match`, `dismiss_match`, `restore_match`, `save_question`, `submit_match_verdict`, `get_negotiation_playbook`.
+- **every write:** `set_up_search` (only with `confirm=True`; the read-back without it works), `update_preferences`, `log_application`, `track_external_application`, `update_application`, `save_match`, `dismiss_match`, `restore_match`, `save_question`, `submit_match_verdict`, `get_negotiation_playbook`.
 
 The Settings card makes `full` keys. A `read_no_pii` key is minted through the API (`POST /api/v1/api-keys` with `"scope": "read_no_pii"` and your `current_password`) from a signed-in session.
 
