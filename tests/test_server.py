@@ -831,3 +831,5 @@ def test_the_get_job_docstring_explains_the_new_facts_and_no_longer_claims_repos
         assert phrase in doc, phrase
     assert "disappeared or reappeared" not in doc
     assert "nothing" in doc and "reposts" in doc          # ghost_signal is stated as description quality only
+    assert "null means we cannot tell" in doc              # was_reopened null = column absent / unknown
+    assert "1 = the job description requires" in doc and "not the same as" in doc   # degree/clearance: 1 defined, null = not stated

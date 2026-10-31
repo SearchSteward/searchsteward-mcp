@@ -358,9 +358,10 @@ def get_job(job_id: int) -> Dict[str, Any]:
       our scans stopped seeing it (null = still seen).
     - was_reopened: true if the posting closed and came back since reopen_tracked_since (2026-09-30). False only means
       "not since that date": earlier reopens were not recorded, so compare first_seen_at with reopen_tracked_since
-      before saying a job was never reopened. There is no reopen count.
-    - years_required, degree_required (1), clearance_required (1): what the job description states; null is no
-      signal, not "not required". work_arrangement (+ work_arrangement_source): set for a minority of jobs.
+      before saying a job was never reopened. null means we cannot tell. There is no reopen count.
+    - years_required (a number of years), degree_required and clearance_required (1 = the job description requires
+      it, null = it does not state it, which is not the same as "not required"). work_arrangement (+
+      work_arrangement_source): set for a minority of jobs.
     - ghost_signal: job-description quality flags only (for example a stub or sparse description). It says nothing
       about reposts or a posting disappearing.
     The job description comes twice: description (as stored: HTML-escaped, cut at 4000 characters) and
