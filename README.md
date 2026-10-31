@@ -194,12 +194,12 @@ Every prompt below was run against the live service on 2026-10-31 on a demo acco
 
 Be aware of these limits today; we have checked each against the live service.
 
-- **Closed-then-reopened history.** `get_job` shows when SearchSteward first saw a posting, how many of our scans saw it and since when scans stopped seeing it, but it does not yet say whether a job was closed and reopened; `ghost_signal` looks at the description only.
+- **Reposts and closed-then-reopened history.** `get_job` shows when SearchSteward first saw a posting, how many of our scans saw it and since when scans stopped seeing it, but it does not say whether a job was closed and reopened, or how many times it was reposted; `ghost_signal` looks at the description only.
 - **"No response" follow-ups.** `list_applications` shows `days_since_applied` for each application, so Claude can work out which ones have gone quiet; its days-in-stage and stalled flags are still not reliable for applications you tracked yourself, so do not rely on them.
 - **Interviews.** There is no tool that lists upcoming interviews, and none that logs one; a note such as "phone screen Tuesday 3pm" is free text on the application.
 - **A daily brief in one call**, and **a company's other open roles** as a tool: not available. Ask Claude to combine `check_new_matches` and `list_applications`.
 
-Coming (not live yet, so do not count on it): a simple yes/no on `get_job` for whether a job was reopened. This list will change as it ships.
+Coming (not live yet, so do not count on it): a simple yes/no on `get_job` for whether a job was reopened at least once, and a way to ask `list_applications` for applications with no response after a number of days (that one needs a new release of this package). This list will change as they ship.
 
 ## Free vs Radar
 
