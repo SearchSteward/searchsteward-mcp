@@ -322,7 +322,8 @@ def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Good")
     carries its `band`. Sorted highest score first. Use this at the start of a session to catch recent strong opportunities without
     browsing the full feed. Do NOT use this to filter by salary/location — use search_matches with
     filters instead. Hours default 48 (2 days); values below 1 are clamped to 1. If none are found
-    in the window, returns an empty list with a message.
+    in the window, returns an empty list with a message. On an account with no Strong or Good matches yet but some Fair ones,
+    the message says so and what lifts them (set_skills, save_resume), so an empty answer there is not a broken one.
     NOTE: scans only the first page (top 25 ranked matches), so a new match ranked below 25 will not
     be seen. For an exhaustive walk, page through search_matches."""
     try:
@@ -351,6 +352,12 @@ def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Good")
     if not fresh:
         if not jobs and _no_search_yet():
             result["message"] = _NO_SEARCH_MESSAGE
+        elif not any(j.get("fit_band_v2") in _BANDS["Good"] for j in jobs) and any(j.get("fit_band_v2") == "Fair Match" for j in jobs):
+            # A new account: Fair rows and nothing above them yet. "None new" reads as broken; say what is there and what lifts it (rows already fetched).
+            n = len(_fold([_row(j) for j in jobs if j.get("fit_band_v2") == "Fair Match"]))
+            have = f"at least {n}" if len(jobs) >= _MAX_PAGE_SIZE else str(n)
+            result["message"] = (f"No Strong or Good matches yet. You have {have} Fair {'match' if n == 1 and len(jobs) < _MAX_PAGE_SIZE else 'matches'}; "
+                                 "adding your skills (set_skills) or saving your résumé (save_resume) usually lifts the best ones.")
         else:
             result["message"] = f"No new {label} Matches in the last {hours}h."
             if band == "Strong":
