@@ -353,11 +353,10 @@ def check_new_matches(hours: int = 48, band: Literal["Strong", "Good"] = "Good")
         if not jobs and _no_search_yet():
             result["message"] = _NO_SEARCH_MESSAGE
         elif not any(j.get("fit_band_v2") in _BANDS["Good"] for j in jobs) and any(j.get("fit_band_v2") == "Fair Match" for j in jobs):
-            # A new account: Fair rows and nothing above them yet. "None new" reads as broken; say what is there and what lifts it (rows already fetched).
-            n = len(_fold([_row(j) for j in jobs if j.get("fit_band_v2") == "Fair Match"]))
-            have = f"at least {n}" if len(jobs) >= _MAX_PAGE_SIZE else str(n)
-            result["message"] = (f"No Strong or Good matches yet. You have {have} Fair {'match' if n == 1 and len(jobs) < _MAX_PAGE_SIZE else 'matches'}; "
-                                 "adding your skills (set_skills) or saving your résumé (save_resume) usually lifts the best ones.")
+            # A new account: Fair rows and nothing above them yet. "None new" reads as broken; say what is there and what lifts it. No number on purpose:
+            # the page counts rows, search_matches folds them into cards and the feed total counts rows, so any count here would disagree with one of them.
+            result["message"] = ("No Strong or Good matches yet: your best matches so far are Fair. "
+                                 "Adding your skills (set_skills) or saving your résumé (save_resume) usually lifts them.")
         else:
             result["message"] = f"No new {label} Matches in the last {hours}h."
             if band == "Strong":
