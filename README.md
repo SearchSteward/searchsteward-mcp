@@ -11,7 +11,7 @@ It does three jobs for a job seeker.
 | Job | What you say | What it does |
 |---|---|---|
 | **Find** | "Set up my search: senior data analyst in Denver, hybrid is fine, $120k+." "Anything new today?" "Why is my feed so thin?" | Sets up a search from one sentence (it reads it back and saves only when you say yes), pulls what is new, and tells you which of your own filters cuts the most jobs. |
-| **Decide** | "Why did the first one score high?" "Which pay $150k or more?" "Save the first, hide the third, it's really a sales job." | Shows the score breakdown and the ghost-listing signal for a match, filters by pay and place, and saves or dismisses with a reason that sharpens later scoring. |
+| **Decide** | "Why did the first one score high?" "Which pay $150k or more?" "Save the first, hide the third, it's really a sales job." | Shows the score breakdown for a match, filters by pay and place, and saves or dismisses with a reason that sharpens later scoring. |
 | **Land** | "Here's my résumé." "Add Python, dbt and Looker to my skills." "I applied to X on LinkedIn, track it." "Run a mock interview for my top match." | Saves your résumé and skills (skills feed your match scores), tracks every application in one place whether it came from SearchSteward or elsewhere, keeps your interview question bank, and runs a mock interview in your own Claude. |
 
 It acts only on **your own account**. You choose how much Claude may see: [Full access or Read-only](#full-access-vs-read-only).
@@ -111,7 +111,7 @@ A Read-only connection still lists all 25 tools; the refused ones answer with th
 |---|---|
 | `search_matches` | Search your matches, score-ranked, 25 per page; filter by title/keyword, location (for example "Remote"), minimum pay (range overlap: a job is kept if its pay range reaches the floor) and status. |
 | `check_new_matches` | The new matches from the last N hours (default 48), Strong plus Good by default or Strong only. Looks at the top 25 only. |
-| `get_job` | One match in full: score breakdown, ghost-listing signal, description (4,000 characters at most). |
+| `get_job` | One match in full: score breakdown, a posting-quality flag (`ghost_signal`, based on the job description only, for example a stub or sparse description), and the description (4,000 characters at most, currently with its HTML tags escaped). |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it. |
 | `save_resume` | Saves your résumé text as your primary résumé (at least 200 characters; Claude confirms first and sends the full text). It does **not** change your scores; skills do (`set_skills`). |
 
@@ -172,7 +172,7 @@ Every prompt below was run against the live service on 2026-10-31 on a demo acco
 2. **Start the day.**
    *"Anything new in my matches today?"* → `check_new_matches` returns `{new_high_fit: […], count, window_hours: 48, band: "Good", message}`. Each row carries its band (Strong Match, Good Match). An empty list comes back with a message, not an error. Ask "Strong only, last 7 days" to widen the window and narrow the band.
 3. **Understand a match.**
-   *"Show my top 5 matches, and tell me why the first one scored high."* → `search_matches` rows look like `{id, title, company, location, salary_low, salary_high, score, band, remote, discovered, seen_on_site}`; then `get_job` adds the score breakdown (`match_reasoning`, `matched_keywords`, `score_movers`), the ghost-listing signal (`ghost_signal`) and a description cut at 4,000 characters.
+   *"Show my top 5 matches, and tell me why the first one scored high."* → `search_matches` rows look like `{id, title, company, location, salary_low, salary_high, score, band, remote, discovered, seen_on_site}`; then `get_job` adds the score breakdown (`match_reasoning`, `matched_keywords`, `score_movers`) and a description cut at 4,000 characters. `ghost_signal` is a description-quality flag; it does not say whether a job was reposted or closed and reopened.
 4. **Find out why the feed is thin.**
    *"Why is my feed so thin?"* → `why_is_my_feed_thin`: `{feed_count, strong_count, thin_constraint: {label, excludes}, guidance: {headline, message, primary_action}, profile: {resume, skills_saved}}`. On the demo account the filter cutting most was location (68 jobs excluded).
 5. **Filter by pay or place.**
@@ -187,6 +187,18 @@ Every prompt below was run against the live service on 2026-10-31 on a demo acco
    *"Run a mock interview for my top match, one question at a time."* → on Route 2 pick the `practice_interview` prompt; on the connector just ask. It reads `get_job`, `get_resume` and `list_questions` (the question bank is empty until you save answers with `save_question`). We ran the prompt text and those tool calls; the interview itself is Claude's conversation and was not run as a test. Needs Full access.
 10. **See what Radar adds.**
     *"What would the negotiation playbook say for this application?"* → on a free plan `get_negotiation_playbook` answers `{error: true, status: 402, detail: "This capability requires a paid (Radar) plan.", upgrade_url}`; Claude can tell you plainly. On Radar it returns the playbook.
+
+## What it does not do yet
+
+Be aware of these limits today; we have checked each against the live service.
+
+- **Reposts and closed-then-reopened history.** `get_job` does not tell you how long a job has been up or whether it was closed and reopened; `ghost_signal` looks at the description only.
+- **"No response" follow-ups.** `list_applications` shows the date you applied, but its days-in-stage and stalled flags are not reliable for applications you tracked yourself, so do not rely on them; Claude can work from the applied date.
+- **Interviews.** There is no tool that lists upcoming interviews, and none that logs one; a note such as "phone screen Tuesday 3pm" is free text on the application.
+- **A daily brief in one call**, and **a company's other open roles** as a tool: not available. Ask Claude to combine `check_new_matches` and `list_applications`.
+- **Job descriptions** currently arrive with their HTML tags escaped, which costs tokens but is still readable by Claude.
+
+Coming (not live yet, so do not count on it): posting age and reopen count on `get_job`, readable job descriptions, and a days-since-applied field on `list_applications`. This list will change as they ship.
 
 ## Free vs Radar
 
