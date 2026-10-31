@@ -114,6 +114,9 @@ class SearchStewardClient:
     def get_applications(self, params: Dict[str, Any]) -> Any:
         return self._request("GET", "/api/v1/applications", params={k: v for k, v in params.items() if v is not None})
 
+    def get_daily_brief(self, params: Dict[str, Any]) -> Any:
+        return self._request("GET", "/api/v1/brief/daily", params={k: v for k, v in params.items() if v is not None})
+
     def apply_track(self, job_id: int, note: Optional[str] = None) -> Any:
         body = {"note": note} if note else {}
         out = self._request("POST", f"/api/v1/applications/{job_id}/apply-track", json=body)
