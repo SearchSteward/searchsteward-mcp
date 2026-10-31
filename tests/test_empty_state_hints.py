@@ -95,3 +95,35 @@ def test_profile_line_with_a_title_is_unchanged(monkeypatch):
     s = {"title_preferences": {"positive_keywords": ["Senior Data Analyst"]}, "weights_jd": {"body_positive": {"senior data analyst": 3.0}}}
     _use(monkeypatch, status={"first_feed_status": {"state": "ready"}, "resume": {"status": "missing"}}, settings=s)
     assert "only a job title is saved" in _fn("why_is_my_feed_thin")()["profile"]["line"]
+
+
+# --- delta after Support's review (survivors 4-5) and the weights_title-only profile --------------------------------------------------------
+
+def test_fallback_needs_no_targets_a_target_company_means_a_search_exists(monkeypatch):
+    # No primary_action (an API before the chat wording), scoring not ready, but 3 target companies: that is a search.
+    status = {"preferences": {"scoring_ready": False}, "target_company_count": 3, "feed_guidance": {}}
+    _use(monkeypatch, status=status)
+    assert "message" not in _fn("search_matches")()
+    _use(monkeypatch, status=status)
+    assert _fn("check_new_matches")()["message"] == "No new Strong or Good Matches in the last 48h."
+
+
+def test_fallback_needs_scoring_ready_to_be_exactly_false(monkeypatch):
+    # An unknown readiness (key missing, null) or a ready account with no targets is not "no search".
+    for prefs in ({}, {"scoring_ready": None}, {"scoring_ready": True}, {"scoring_ready": 1}):
+        _use(monkeypatch, status={"preferences": prefs, "target_company_count": 0})
+        assert "message" not in _fn("search_matches")(), prefs
+
+
+def test_fallback_says_no_search_when_not_ready_and_no_targets(monkeypatch):
+    for count in (0, None):
+        _use(monkeypatch, status={"preferences": {"scoring_ready": False}, "target_company_count": count})
+        assert _fn("search_matches")()["message"] == NO_SEARCH
+
+
+def test_profile_with_only_weights_title_does_not_say_no_title(monkeypatch):
+    # scoring_ready is true for a weights_title-only account (has_positive_anchor); the profile line must not claim "no job title".
+    s = {"title_preferences": {"positive_keywords": []}, "weights_title": {"data analyst": 3.0}, "weights_jd": {}}
+    _use(monkeypatch, status={"first_feed_status": {"state": "ready"}, "resume": {"status": "missing"}}, settings=s)
+    line = _fn("why_is_my_feed_thin")()["profile"]["line"]
+    assert "Nothing is saved yet" not in line and "only a job title is saved" in line

@@ -847,7 +847,8 @@ def _profile(status: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         titles = {str(t).strip().lower() for t in (s.get("title_preferences") or {}).get("positive_keywords") or []}
         body = _skills_map(s)
         skills = sum(1 for t in body if str(t).strip().lower() not in titles)
-        n_titles = len(titles)
+        # weights_title also anchors a search (the API counts it as a title); a title saved only there is still a saved title.
+        n_titles = len(titles) or len(s.get("weights_title") or {})
     if resume is None and skills is None:
         return None
     out: Dict[str, Any] = {"resume": resume, "skills_saved": skills}
