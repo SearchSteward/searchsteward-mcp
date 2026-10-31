@@ -830,7 +830,7 @@ def test_hosted_per_request_client_wins_over_the_process_client(monkeypatch):
 
 def test_application_kit_passes_the_id_and_the_limit_and_returns_the_api_json_unchanged(_fake):
     out = _fn("application_kit")(job_id=77, matches_limit=5)
-    assert out["job"] == {"id": 77} and out["not_included"] == ["requirements_units", "keyword_check"]
+    assert out == {"job": {"id": 77}, "resume": None, "resume_missing": True, "not_included": ["requirements_units", "keyword_check"]}   # the API JSON, whole
     assert _fake.calls[-1] == ("get_application_kit", 77, {"matches_limit": 5})
 
 
@@ -858,8 +858,8 @@ def test_application_kit_is_a_registered_tool_and_its_docstring_states_the_limit
     import asyncio
     tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
     assert "application_kit" in tools
-    doc = tools["application_kit"].description
-    for phrase in ("Claude writes", "not_included", "resume_missing", "matches_limit", "does not write"):
+    doc = " ".join(tools["application_kit"].description.split())    # the docstring wraps lines
+    for phrase in ("Claude writes", "not_included", "resume_missing", "matches_limit", "does not write", 'null means not stated, never "not required"', "untrusted", "1 to 25"):
         assert phrase in doc, phrase
 
 
