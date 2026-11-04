@@ -57,13 +57,13 @@ Open a new terminal afterwards so `uvx` is on your PATH.
 *Claude Code* (one line; replace `your_key`):
 
 ```
-claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key -- uvx --refresh searchsteward-mcp@0.6.0
+claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key -- uvx --refresh searchsteward-mcp@0.6.1
 ```
 
 *Windows PowerShell* (it swallows a bare `--`, so quote it):
 
 ```
-claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key '--' uvx --refresh searchsteward-mcp@0.6.0
+claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key '--' uvx --refresh searchsteward-mcp@0.6.1
 ```
 
 *Claude Desktop*: open Settings, Developer, Edit Config, and add this inside the `mcpServers` object (replace `your_key`), then **quit Claude Desktop completely and reopen it**:
@@ -73,7 +73,7 @@ claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key '--' uvx --refres
   "mcpServers": {
     "searchsteward": {
       "command": "uvx",
-      "args": ["--refresh", "searchsteward-mcp@0.6.0"],
+      "args": ["--refresh", "searchsteward-mcp@0.6.1"],
       "env": { "SEARCHSTEWARD_API_KEY": "your_key" }
     }
   }
@@ -84,7 +84,7 @@ The key sits in that config file, so treat the file like a password.
 
 **3. Run your first search** with the same prompt as in Route 1.
 
-**Check that it installs:** in a terminal run `uvx --refresh searchsteward-mcp@0.6.0`. It prints nothing and sits waiting, which is normal (it talks to Claude over stdin); press Ctrl+C. If it prints an error instead, open an issue with the first line. If it just waits, the install works and the problem is the key or the config file: check the key starts with `ss_pat_` and has no spaces. (The command-first form `claude mcp add searchsteward uvx searchsteward-mcp@0.6.0 -e SEARCHSTEWARD_API_KEY=your_key` also works; we ran it in PowerShell.)
+**Check that it installs:** in a terminal run `uvx --refresh searchsteward-mcp@0.6.1`. It prints nothing and sits waiting, which is normal (it talks to Claude over stdin); press Ctrl+C. If it prints an error instead, open an issue with the first line. If it just waits, the install works and the problem is the key or the config file: check the key starts with `ss_pat_` and has no spaces. (The command-first form `claude mcp add searchsteward uvx searchsteward-mcp@0.6.1 -e SEARCHSTEWARD_API_KEY=your_key` also works; we ran it in PowerShell.)
 
 **Revoke:** in the same Connect to Claude card, revoke the key. It stops working immediately.
 
