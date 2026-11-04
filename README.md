@@ -111,7 +111,7 @@ You choose on the consent page (Route 1). On Route 2 the key you make in Setting
 |---|---|
 | `search_matches` | Search your matches, score-ranked, 25 per page; filter by title/keyword, location (for example "Remote"), minimum pay (range overlap: a job is kept if its pay range reaches the floor) and status. |
 | `check_new_matches` | The new matches from the last N hours (default 48), Strong plus Good by default or Strong only. Looks at the top 25 only. |
-| `get_job` | One match in full: score breakdown; a posting-quality flag (`ghost_signal`, based on the job description only, for example a stub or sparse description); the job description as plain text (`description_text`, up to 12,000 characters, with `description_text_truncated`; the older `description` field is still returned, cut at about 4,000 characters, and some of those arrive with escaped HTML tags); and posting facts (see below). |
+| `get_job` | One match in full: score breakdown; `ghost_signal` (a stored description and title check that exists for only some jobs, where most show `unknown`, meaning not assessed; plus, when a job has been listed 30+ days, an age note in `soft_notes`, "Listed for 30+ days" or "Listed for 60+ days", which says how long we have listed it, not that it is fake); the job description as plain text (`description_text`, up to 12,000 characters, with `description_text_truncated`; the older `description` field is still returned, cut at about 4,000 characters, and some of those arrive with escaped HTML tags); and posting facts (see below). |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it. |
 | `save_resume` | Saves your résumé text as your primary résumé (at least 200 characters; Claude confirms first and sends the full text). It does **not** change your scores; skills do (`set_skills`). |
 
@@ -194,7 +194,7 @@ Every prompt below was run against the live service on 2026-10-31 on a demo acco
 
 Be aware of these limits today; we have checked each against the live service.
 
-- **Reposts and closed-then-reopened history.** `get_job` shows when SearchSteward first saw a posting, how many of our scans saw it and since when scans stopped seeing it, but it does not say whether a job was closed and reopened, or how many times it was reposted; `ghost_signal` looks at the description only.
+- **Reposts and closed-then-reopened history.** `get_job` shows when SearchSteward first saw a posting, how many of our scans saw it and since when scans stopped seeing it, but it does not say whether a job was closed and reopened, or how many times it was reposted; `ghost_signal` looks at the description and title (for some jobs) and at how long we have listed the job, not at reposts.
 - **"No response" follow-ups.** `list_applications` shows `days_since_applied` for each application, so Claude can work out which ones have gone quiet; its days-in-stage and stalled flags are still not reliable for applications you tracked yourself, so do not rely on them.
 - **Interviews.** There is no tool that lists upcoming interviews, and none that logs one; a note such as "phone screen Tuesday 3pm" is free text on the application.
 - **A daily brief in one call**, and **a company's other open roles** as a tool: not available. Ask Claude to combine `check_new_matches` and `list_applications`.

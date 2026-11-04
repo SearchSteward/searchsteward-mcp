@@ -830,6 +830,22 @@ def test_the_get_job_docstring_explains_the_new_facts_and_no_longer_claims_repos
     for phrase in ("was_reopened", "reopen_tracked_since", "2026-09-30", "first_seen_at", "seen_count", "missing_since_at", "description_text", "null means we have no signal"):
         assert phrase in doc, phrase
     assert "disappeared or reappeared" not in doc
-    assert "nothing" in doc and "reposts" in doc          # ghost_signal is stated as description quality only
+    assert "soft_notes" in doc and "Listed for 30+ days" in doc and "Listed for 60+ days" in doc   # the two age notes (#3495)
+    assert 'tier is "unknown"' in doc and "not assessed" in doc       # most jobs have no stored tier: unknown means not assessed
+    assert "not that it is fake, filled or reposted" in doc           # no 'ghost' promise from an age note
     assert "null means we cannot tell" in doc              # was_reopened null = column absent / unknown
     assert "1 = the job description requires" in doc and "not the same as" in doc   # degree/clearance: 1 defined, null = not stated
+
+
+def test_get_job_passes_ghost_signal_and_soft_notes_through_unchanged(monkeypatch):
+    """get_job returns the API's context dict as is (only the description is cut): the stored badge and the age notes reach the model."""
+    gs = {"tier": "some_flags", "reasons": [{"code": "sparse_jd", "label": "Sparse job description"}],
+          "soft_notes": [{"code": "open_a_while", "label": "Listed for 30+ days. Check it is still open before you apply."}]}
+
+    class _C:
+        def get_job_context(self, job_id):
+            return {"id": job_id, "ghost_signal": gs, "description": "x"}
+
+    monkeypatch.setattr(server, "_c", lambda: _C())
+    out = server.get_job(job_id=5)
+    assert out["ghost_signal"] == gs
