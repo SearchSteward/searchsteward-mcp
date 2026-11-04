@@ -1,5 +1,7 @@
 # searchsteward-mcp
 
+<!-- mcp-name: io.github.SearchSteward/searchsteward-mcp -->
+
 Ask Claude about your job search instead of opening an app. This [MCP](https://modelcontextprotocol.io) server connects [SearchSteward](https://searchsteward.com/mcp?utm_source=github&utm_medium=readme&utm_campaign=mcp_launch_2026_11) to Claude (Claude.ai, Claude Desktop, Claude Code and other MCP clients), so "anything new today?" and "save the first one, hide the third" are just chat messages.
 
 **The free plan works.** Every step below was run against the live service on a free account. A key or connection uses your plan's own limits, exactly as the web app does (see [Free vs Radar](#free-vs-radar)).
