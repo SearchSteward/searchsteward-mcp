@@ -646,9 +646,15 @@ def get_preferences() -> Dict[str, Any]:
     to change one thing without guessing the rest. Use this to explain WHY a job did or did not
     appear before changing anything."""
     try:
-        return _c().get_user_settings()
+        data = _c().get_user_settings()
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+    # "activation" is the server's own retry receipt for set_up_search (the payload that first set the criteria, plus a
+    # fingerprint), not a preference. After a floor reset it still holds the ORIGINAL request, e.g. salary_min 1379130
+    # beside a real floor of 137913, which sends the model hunting for a second pay setting (QA 10-29, A4 / item 10).
+    if isinstance(data, dict) and "activation" in data:
+        data = {k: v for k, v in data.items() if k != "activation"}
+    return data
 
 
 @mcp.tool()
