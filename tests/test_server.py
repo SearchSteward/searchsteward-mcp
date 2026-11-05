@@ -253,6 +253,21 @@ def test_get_offer_for_a_stored_offer_is_unchanged(monkeypatch, _fake):
     assert out["offer"]["base_salary"] == 150000.0
 
 
+# An offer dict with NO "id" key at all (a response shape we have not seen) is not the empty workspace: only an explicit
+# id of null means "nothing saved". Absent id -> treated as a stored offer, never hidden.
+_NO_ID_WORKSPACE = {"application": {"id": 5, "status": "offer"},
+                    "offer": {"application_id": 5, "offer_status": "pending", "base_salary": 150000.0}}
+
+
+def test_an_offer_without_an_id_key_is_kept_not_called_unsaved(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_offer", lambda application_id: dict(_NO_ID_WORKSPACE))
+    out = _fn("get_offer")(application_id=5)
+    assert "offer_saved" not in out
+    assert out["offer"]["base_salary"] == 150000.0
+    app = _fn("get_application")(application_id=5)
+    assert app["offer"]["offer"]["base_salary"] == 150000.0
+
+
 def test_get_offer_docstring_no_longer_promises_a_404():
     doc = (server.get_offer.fn if hasattr(server.get_offer, "fn") else server.get_offer).__doc__
     assert "404" not in doc
