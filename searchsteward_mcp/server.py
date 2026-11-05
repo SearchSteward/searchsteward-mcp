@@ -547,16 +547,30 @@ def save_resume(text: str, name: Optional[str] = None) -> Dict[str, Any]:
     return {"saved": True, "created": created, "name": back.get("name"), "characters": len(body)}
 
 
+def _offer_not_saved(workspace: Any) -> bool:
+    """True for the empty workspace the API returns when no offer has been saved on the application: its offer
+    object carries `id: null`. A stored offer has an id; an older API that always stored a row also has one, so
+    this never hides a real offer."""
+    offer = workspace.get("offer") if isinstance(workspace, dict) else None
+    return isinstance(offer, dict) and "id" in offer and offer["id"] is None
+
+
 @mcp.tool()
 def get_offer(application_id: int) -> Dict[str, Any]:
     """Retrieve offer details (base salary, bonus, equity, deadline) for a tracked application.
     Use this when you have an offer and need to analyze the compensation package or plan negotiation.
     Call this BEFORE get_negotiation_playbook to confirm an offer exists. Returns the offer workspace
-    with all documented terms, or 404 if no offer exists yet on this application."""
+    with all documented terms. If no offer has been saved on the application yet, the workspace is
+    empty: `offer.id` is null and `offer_saved` is false (asking stores nothing, and there is no
+    playbook to offer)."""
     try:
         result = _c().get_offer(application_id)
     except Exception as exc:  # noqa: BLE001
         return _err(exc)
+    if _offer_not_saved(result):
+        # An application nobody has made an offer on: say so, and do not point at the negotiation playbook.
+        result["offer_saved"] = False
+        return result
     # Offer stage is peak negotiation intent — point Claude at the playbook tool.
     # Neutral wording: free users hit the existing 402 (which carries the upgrade
     # message) on execution; paid users just use it.
@@ -578,7 +592,10 @@ def get_application(application_id: int) -> Dict[str, Any]:
         # Attempt to merge offer details if present
         try:
             offer = _c().get_offer(application_id)
-            app["offer"] = offer
+            # An application with no saved offer comes back as an empty workspace (offer.id null): that is not an offer,
+            # so it is left out instead of showing a "pending" offer that does not exist (QA 10-29 item 8).
+            if not _offer_not_saved(offer):
+                app["offer"] = offer
         except ApiError as e:
             if e.status_code not in {404, 403}:
                 raise
