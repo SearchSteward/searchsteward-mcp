@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.searchsteward/searchsteward-mcp",
+  "title": "SearchSteward",
+  "description": "Run your job search from Claude: new matches, save or dismiss, track applications, prep interviews.",
+  "websiteUrl": "https://searchsteward.com/mcp",
+  "repository": {
+    "url": "https://github.com/SearchSteward/searchsteward-mcp",
+    "source": "github"
+  },
+  "version": "0.6.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "searchsteward-mcp",
+      "version": "0.6.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SEARCHSTEWARD_API_KEY",
+          "description": "Your SearchSteward API key (starts ss_pat_). Create one in SearchSteward: Settings, Billing & plan, Integrations, Connect to Claude, Create Key.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.searchsteward.com/mcp"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # searchsteward-mcp
 
-<!-- mcp-name: io.github.SearchSteward/searchsteward-mcp -->
+<!-- mcp-name: com.searchsteward/searchsteward-mcp -->
 
 Ask Claude about your job search instead of opening an app. This [MCP](https://modelcontextprotocol.io) server connects [SearchSteward](https://searchsteward.com/mcp?utm_source=github&utm_medium=readme&utm_campaign=mcp_launch_2026_11) to Claude (Claude.ai, Claude Desktop, Claude Code and other MCP clients), so "anything new today?" and "save the first one, hide the third" are just chat messages.
 
