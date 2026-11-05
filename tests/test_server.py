@@ -497,6 +497,31 @@ def test_get_preferences_reads_through(monkeypatch):
     assert fake.calls == [("get",)]
 
 
+def test_get_preferences_drops_the_internal_activation_receipt(monkeypatch):
+    """QA 10-29 item 10 / A4: after a pay-floor reset, settings still carried activation.from_search_params with the
+    ORIGINAL request (salary_min 1379130) beside the real floor 137913. It is a retry receipt, not a preference."""
+    fake = _PrefsClient()
+    real = fake.get_user_settings
+    stale = {"from_search_params": {"params": {"salary_min": 1379130}, "criteria": "fingerprint"}}
+    monkeypatch.setattr(fake, "get_user_settings", lambda: {**real(), "activation": stale})
+    monkeypatch.setattr(server, "_c", lambda: fake)
+    out = server.get_preferences()
+    assert "activation" not in out
+    assert "1379130" not in str(out)
+    assert out["compensation_location"]["primary_zip"] == "77479"      # the real preferences are untouched
+    assert out["gates_hard"] == {"location_hard_filter": False}
+
+
+def test_get_preferences_error_results_pass_through_unchanged(monkeypatch):
+    class _Boom:
+        def get_user_settings(self):
+            raise ApiError(403, "This API key's scope does not allow this")
+
+    monkeypatch.setattr(server, "_c", lambda: _Boom())
+    out = server.get_preferences()
+    assert out["error"] is True and out["status"] == 403
+
+
 def test_update_preferences_sends_only_the_changed_key(monkeypatch):
     fake = _PrefsClient()
     monkeypatch.setattr(server, "_c", lambda: fake)
