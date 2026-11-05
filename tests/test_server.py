@@ -227,6 +227,66 @@ def test_get_offer_returns_compensation():
     assert out["bonus"] == 30000
 
 
+# QA 10-29 item 8: an application nobody has made an offer on used to come back as a "pending" offer (and the API wrote a row
+# to make that happen). The API now returns an empty workspace (offer.id null) without storing anything; the tools must say
+# so instead of presenting it as an offer.
+_EMPTY_WORKSPACE = {"application": {"id": 5, "status": "considering"},
+                    "offer": {"id": None, "application_id": 5, "offer_status": "pending", "base_salary": None},
+                    "company": None, "communication": [], "suggestions": []}
+_STORED_WORKSPACE = {"application": {"id": 5, "status": "offer"},
+                     "offer": {"id": 19, "application_id": 5, "offer_status": "pending", "base_salary": 150000.0}}
+
+
+def test_get_offer_says_when_no_offer_is_saved_and_offers_no_playbook(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_offer", lambda application_id: dict(_EMPTY_WORKSPACE))
+    out = _fn("get_offer")(application_id=5)
+    assert out["offer_saved"] is False
+    assert "radar_tip" not in out                      # no negotiation playbook for an offer that does not exist
+    assert out["offer"]["id"] is None
+
+
+def test_get_offer_for_a_stored_offer_is_unchanged(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_offer", lambda application_id: dict(_STORED_WORKSPACE))
+    out = _fn("get_offer")(application_id=5)
+    assert "offer_saved" not in out
+    assert "get_negotiation_playbook" in out["radar_tip"]
+    assert out["offer"]["base_salary"] == 150000.0
+
+
+# An offer dict with NO "id" key at all (a response shape we have not seen) is not the empty workspace: only an explicit
+# id of null means "nothing saved". Absent id -> treated as a stored offer, never hidden.
+_NO_ID_WORKSPACE = {"application": {"id": 5, "status": "offer"},
+                    "offer": {"application_id": 5, "offer_status": "pending", "base_salary": 150000.0}}
+
+
+def test_an_offer_without_an_id_key_is_kept_not_called_unsaved(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_offer", lambda application_id: dict(_NO_ID_WORKSPACE))
+    out = _fn("get_offer")(application_id=5)
+    assert "offer_saved" not in out
+    assert out["offer"]["base_salary"] == 150000.0
+    app = _fn("get_application")(application_id=5)
+    assert app["offer"]["offer"]["base_salary"] == 150000.0
+
+
+def test_get_offer_docstring_no_longer_promises_a_404():
+    doc = (server.get_offer.fn if hasattr(server.get_offer, "fn") else server.get_offer).__doc__
+    assert "404" not in doc
+    assert "offer_saved" in doc and "stores nothing" in doc
+
+
+def test_get_application_leaves_out_the_empty_offer_workspace(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_offer", lambda application_id: dict(_EMPTY_WORKSPACE))
+    out = _fn("get_application")(application_id=5)
+    assert out["id"] == 5
+    assert "offer" not in out
+
+
+def test_get_application_keeps_a_stored_offer(monkeypatch, _fake):
+    monkeypatch.setattr(_fake, "get_offer", lambda application_id: dict(_STORED_WORKSPACE))
+    out = _fn("get_application")(application_id=5)
+    assert out["offer"]["offer"]["id"] == 19
+
+
 def test_get_application_merges_offer_on_success(_fake):
     out = _fn("get_application")(application_id=5)
     assert out["id"] == 5
