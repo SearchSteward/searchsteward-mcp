@@ -1,5 +1,7 @@
 # searchsteward-mcp
 
+<!-- mcp-name: com.searchsteward/searchsteward-mcp -->
+
 Ask Claude about your job search instead of opening an app. This [MCP](https://modelcontextprotocol.io) server connects [SearchSteward](https://searchsteward.com/mcp?utm_source=github&utm_medium=readme&utm_campaign=mcp_launch_2026_11) to Claude (Claude.ai, Claude Desktop, Claude Code and other MCP clients), so "anything new today?" and "save the first one, hide the third" are just chat messages.
 
 **The free plan works.** Every step below was run against the live service on a free account. A key or connection uses your plan's own limits, exactly as the web app does (see [Free vs Radar](#free-vs-radar)).
@@ -57,13 +59,13 @@ Open a new terminal afterwards so `uvx` is on your PATH.
 *Claude Code* (one line; replace `your_key`):
 
 ```
-claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key -- uvx --refresh searchsteward-mcp@0.6.0
+claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key -- uvx --refresh searchsteward-mcp@0.6.1
 ```
 
 *Windows PowerShell* (it swallows a bare `--`, so quote it):
 
 ```
-claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key '--' uvx --refresh searchsteward-mcp@0.6.0
+claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key '--' uvx --refresh searchsteward-mcp@0.6.1
 ```
 
 *Claude Desktop*: open Settings, Developer, Edit Config, and add this inside the `mcpServers` object (replace `your_key`), then **quit Claude Desktop completely and reopen it**:
@@ -73,7 +75,7 @@ claude mcp add searchsteward -e SEARCHSTEWARD_API_KEY=your_key '--' uvx --refres
   "mcpServers": {
     "searchsteward": {
       "command": "uvx",
-      "args": ["--refresh", "searchsteward-mcp@0.6.0"],
+      "args": ["--refresh", "searchsteward-mcp@0.6.1"],
       "env": { "SEARCHSTEWARD_API_KEY": "your_key" }
     }
   }
@@ -84,7 +86,7 @@ The key sits in that config file, so treat the file like a password.
 
 **3. Run your first search** with the same prompt as in Route 1.
 
-**Check that it installs:** in a terminal run `uvx --refresh searchsteward-mcp@0.6.0`. It prints nothing and sits waiting, which is normal (it talks to Claude over stdin); press Ctrl+C. If it prints an error instead, open an issue with the first line. If it just waits, the install works and the problem is the key or the config file: check the key starts with `ss_pat_` and has no spaces. (The command-first form `claude mcp add searchsteward uvx searchsteward-mcp@0.6.0 -e SEARCHSTEWARD_API_KEY=your_key` also works; we ran it in PowerShell.)
+**Check that it installs:** in a terminal run `uvx --refresh searchsteward-mcp@0.6.1`. It prints nothing and sits waiting, which is normal (it talks to Claude over stdin); press Ctrl+C. If it prints an error instead, open an issue with the first line. If it just waits, the install works and the problem is the key or the config file: check the key starts with `ss_pat_` and has no spaces. (The command-first form `claude mcp add searchsteward uvx searchsteward-mcp@0.6.1 -e SEARCHSTEWARD_API_KEY=your_key` also works; we ran it in PowerShell.)
 
 **Revoke:** in the same Connect to Claude card, revoke the key. It stops working immediately.
 
@@ -111,7 +113,7 @@ You choose on the consent page (Route 1). On Route 2 the key you make in Setting
 |---|---|
 | `search_matches` | Search your matches, score-ranked, 25 per page; filter by title/keyword, location (for example "Remote"), minimum pay (range overlap: a job is kept if its pay range reaches the floor) and status. |
 | `check_new_matches` | The new matches from the last N hours (default 48), Strong plus Good by default or Strong only. Looks at the top 25 only. |
-| `get_job` | One match in full: score breakdown; a posting-quality flag (`ghost_signal`, based on the job description only, for example a stub or sparse description); the job description as plain text (`description_text`, up to 12,000 characters, with `description_text_truncated`; the older `description` field is still returned, cut at about 4,000 characters, and some of those arrive with escaped HTML tags); and posting facts (see below). |
+| `get_job` | One match in full: score breakdown; `ghost_signal` (a stored description and title check that exists for only some jobs, where most show `unknown`, meaning not assessed; plus, when a job has been listed 30+ days, an age note in `soft_notes`, "Listed for 30+ days" or "Listed for 60+ days", which says how long we have listed it, not that it is fake); the job description as plain text (`description_text`, up to 12,000 characters, with `description_text_truncated`; the older `description` field is still returned, cut at about 4,000 characters, and some of those arrive with escaped HTML tags); and posting facts including `was_reopened` with `reopen_tracked_since` (see below). |
 | `get_resume` | Your résumé text, so Claude can reason about fit and tailor it. |
 | `save_resume` | Saves your résumé text as your primary résumé (at least 200 characters; Claude confirms first and sends the full text). It does **not** change your scores; skills do (`set_skills`). |
 
@@ -160,7 +162,7 @@ You choose on the consent page (Route 1). On Route 2 the key you make in Setting
 | `submit_match_verdict` | Records ground truth on one job (`should_surface`, `should_not_surface`, `unsure`). |
 | `review_summary` | Counts the verdicts you have submitted. |
 
-**About the posting facts `get_job` returns.** `first_seen_at` is when SearchSteward first saw the posting, not the employer's date. `posted_at` is the employer's posting date, known for only about 41% of active jobs and empty otherwise. `seen_count` is how many of our scans saw the posting. `missing_since_at` is since when scans stopped seeing it (empty if it is still seen). `years_required`, `degree_required` and `clearance_required` are what the job description states: empty means we found no signal, not that it is not required. `work_arrangement` (with `work_arrangement_source`) is set for only about 15% of jobs.
+**About the posting facts `get_job` returns.** `first_seen_at` is when SearchSteward first saw the posting, not the employer's date. `posted_at` is the employer's posting date, known for only about 41% of active jobs and empty otherwise. `seen_count` is how many of our scans saw the posting. `missing_since_at` is since when scans stopped seeing it (empty if it is still seen). `years_required`, `degree_required` and `clearance_required` are what the job description states: empty means we found no signal, not that it is not required. `work_arrangement` (with `work_arrangement_source`) is set for only about 15% of jobs. `was_reopened` is true if we have seen this posting close and come back since `reopen_tracked_since` (2026-09-30, when we started tracking); false means not seen reopening since then, not "never", and it is empty (null) when we cannot tell.
 
 **Prompt: `practice_interview(job_id)`** is a mock interview for one of your matches: Claude reads the job, your résumé and your saved questions, asks one question at a time, gives feedback on each answer, and ends with your weak spots. It runs entirely in your own Claude and uses no extra SearchSteward capacity. The prompt appears in the prompt menu on **Route 2 only**; on the connector (Route 1) it is not listed, so just ask in chat: "Run a mock interview for my top match, one question at a time." Claude does the same work with `get_job`, `get_resume` and `list_questions`.
 
@@ -194,12 +196,12 @@ Every prompt below was run against the live service on 2026-10-31 on a demo acco
 
 Be aware of these limits today; we have checked each against the live service.
 
-- **Reposts and closed-then-reopened history.** `get_job` shows when SearchSteward first saw a posting, how many of our scans saw it and since when scans stopped seeing it, but it does not say whether a job was closed and reopened, or how many times it was reposted; `ghost_signal` looks at the description only.
+- **How many times a job was reposted, and reopen history before 2026-09-30.** `get_job` says whether we have seen a posting close and come back since 2026-09-30 (`was_reopened` with `reopen_tracked_since`), but not how many times and not before that date; `ghost_signal` looks at the description and title (for some jobs) and at how long we have listed the job, not at reposts.
 - **"No response" follow-ups.** `list_applications` shows `days_since_applied` for each application, so Claude can work out which ones have gone quiet; its days-in-stage and stalled flags are still not reliable for applications you tracked yourself, so do not rely on them.
 - **Interviews.** There is no tool that lists upcoming interviews, and none that logs one; a note such as "phone screen Tuesday 3pm" is free text on the application.
 - **A daily brief in one call**, and **a company's other open roles** as a tool: not available. Ask Claude to combine `check_new_matches` and `list_applications`.
 
-Coming (not live yet, so do not count on it): a simple yes/no on `get_job` for whether a job was reopened at least once, and a way to ask `list_applications` for applications with no response after a number of days (that one needs a new release of this package). This list will change as they ship.
+Coming (not live yet, so do not count on it): a way to ask `list_applications` for applications with no response after a number of days (that one needs a new release of this package). This list will change as it ships.
 
 ## Free vs Radar
 
